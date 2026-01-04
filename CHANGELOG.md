@@ -23,3 +23,4 @@ Release notes and development milestones.
 - [2026-01-04 16:01] test(socket): simulate network dropouts and assert state reconciliation
 - [2026-01-04 17:39] refactor(adapters): abstract agent runtime communication protocols
 - [2026-01-04 19:17] feat(core): initialize Mission Control agent dashboard with real-time state telemetry
+- [2026-01-04 20:55] feat(graph): render multi-agent execution DAG with interactive node inspection
