@@ -18,3 +18,4 @@ Release notes and development milestones.
 - [2026-01-02 20:32] perf(ws): batch WebSocket state delta broadcasts to minimize client re-renders
 - [2026-01-04 09:30] feat(metrics): track token usage, response latency, and tool invocation counts
 - [2026-01-04 11:07] fix(reconnect): implement exponential backoff reconnection for telemetry socket
+- [2026-01-04 12:45] feat(controls): add pause, resume, and step-through debugger controls for agent runs
