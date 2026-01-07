@@ -32,3 +32,4 @@ Release notes and development milestones.
 - [2026-01-07 13:59] style(ui): apply futuristic dark cockpit aesthetic with crisp border glows
 - [2026-01-07 14:51] test(socket): simulate network dropouts and assert state reconciliation
 - [2026-01-07 15:43] refactor(adapters): abstract agent runtime communication protocols
+- [2026-01-07 16:34] feat(core): initialize Mission Control agent dashboard with real-time state telemetry
