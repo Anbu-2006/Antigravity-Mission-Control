@@ -41,3 +41,4 @@ Release notes and development milestones.
 - [2026-01-07 21:45] feat(controls): add pause, resume, and step-through debugger controls for agent runs
 - [2026-01-09 09:16] style(ui): apply futuristic dark cockpit aesthetic with crisp border glows
 - [2026-01-09 11:26] test(socket): simulate network dropouts and assert state reconciliation
+- [2026-01-09 13:36] refactor(adapters): abstract agent runtime communication protocols
