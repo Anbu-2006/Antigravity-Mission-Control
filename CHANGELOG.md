@@ -50,3 +50,4 @@ Release notes and development milestones.
 - [2026-01-10 13:04] fix(reconnect): implement exponential backoff reconnection for telemetry socket
 - [2026-01-10 14:55] feat(controls): add pause, resume, and step-through debugger controls for agent runs
 - [2026-01-10 16:46] style(ui): apply futuristic dark cockpit aesthetic with crisp border glows
+- [2026-01-10 18:37] test(socket): simulate network dropouts and assert state reconciliation
