@@ -54,3 +54,4 @@ Release notes and development milestones.
 - [2026-01-10 20:28] refactor(adapters): abstract agent runtime communication protocols
 - [2026-01-11 09:44] feat(core): initialize Mission Control agent dashboard with real-time state telemetry
 - [2026-01-11 11:53] feat(graph): render multi-agent execution DAG with interactive node inspection
+- [2026-01-11 14:03] feat(logs): implement streaming log viewer with regex filtering and level syntax highlighting
