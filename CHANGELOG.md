@@ -85,3 +85,4 @@ Release notes and development milestones.
 - [2026-01-17 15:12] feat(core): initialize Mission Control agent dashboard with real-time state telemetry
 - [2026-01-17 17:04] feat(graph): render multi-agent execution DAG with interactive node inspection
 - [2026-01-17 18:55] feat(logs): implement streaming log viewer with regex filtering and level syntax highlighting
+- [2026-01-17 20:46] perf(ws): batch WebSocket state delta broadcasts to minimize client re-renders
