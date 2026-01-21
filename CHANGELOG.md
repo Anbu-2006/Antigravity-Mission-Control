@@ -109,3 +109,4 @@ Release notes and development milestones.
 - [2026-01-21 09:52] feat(metrics): track token usage, response latency, and tool invocation counts
 - [2026-01-21 10:25] fix(reconnect): implement exponential backoff reconnection for telemetry socket
 - [2026-01-21 10:58] feat(controls): add pause, resume, and step-through debugger controls for agent runs
+- [2026-01-21 11:31] style(ui): apply futuristic dark cockpit aesthetic with crisp border glows
