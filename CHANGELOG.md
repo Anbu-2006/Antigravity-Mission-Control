@@ -126,3 +126,4 @@ Release notes and development milestones.
 - [2026-01-21 19:14] feat(graph): render multi-agent execution DAG with interactive node inspection
 - [2026-01-21 19:47] feat(logs): implement streaming log viewer with regex filtering and level syntax highlighting
 - [2026-01-21 20:20] perf(ws): batch WebSocket state delta broadcasts to minimize client re-renders
+- [2026-01-21 20:53] feat(metrics): track token usage, response latency, and tool invocation counts
