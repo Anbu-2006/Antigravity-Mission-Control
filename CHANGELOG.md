@@ -137,3 +137,4 @@ Release notes and development milestones.
 - [2026-01-22 18:44] feat(logs): implement streaming log viewer with regex filtering and level syntax highlighting
 - [2026-01-22 20:34] perf(ws): batch WebSocket state delta broadcasts to minimize client re-renders
 - [2026-01-24 09:27] feat(metrics): track token usage, response latency, and tool invocation counts
+- [2026-01-24 12:05] fix(reconnect): implement exponential backoff reconnection for telemetry socket
