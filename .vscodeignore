@@ -1,0 +1,39 @@
+.vscode/**
+.vscode-test/**
+out/test/**
+src/**
+.gitignore
+.gitattributes
+.editorconfig
+tsconfig.json
+vsc-extension-quickstart.md
+.git/**
+.github/**
+*.vsix
+anbudev_logo.png
+
+# Agent/dev directories — not needed in packaged extension
+.agent/**
+.antigravitycli/**
+docs/**
+conversation_records/**
+scripts/**
+scratch/**
+
+# Build/dev scripts — not needed at runtime
+fix-badge.js
+fix-cats.ps1
+build.bat
+test_*.js
+test_suite.js
+*.code-workspace
+
+# Documentation — not needed at runtime
+PROJECT_CONTEXT.md
+CHANGELOG.md
+
+# Lock file — not needed in extension
+package-lock.json
+
+# Sample/template files
+.antigravityignore
