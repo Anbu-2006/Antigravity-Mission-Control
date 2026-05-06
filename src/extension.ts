@@ -4,6 +4,7 @@ import * as url from 'url';
 import * as crypto from 'crypto';
 import * as os from 'os';
 import * as fs from 'fs';
+import * as path from 'path';
 import axios from 'axios';
 import { AccountTreeProvider } from './accountTreeProvider';
 import { AccountManager, Account, TokenInfo } from './accountManager';
@@ -50,7 +51,7 @@ export function activate(context: vscode.ExtensionContext) {
     migrateDataDir();
 
     const getConfiguredDbPath = () => {
-        const config = vscode.workspace.getConfiguration('anbutech-mission-control');
+        const config = vscode.workspace.getConfiguration('antigravity-mission-control');
         return getVSCDBPath(config.get<string>('databasePathOverride', ''));
     };
 
@@ -64,15 +65,90 @@ export function activate(context: vscode.ExtensionContext) {
             t('openPanel')
         ).then(selection => {
             if (selection === t('openPanel')) {
-                vscode.commands.executeCommand('anbutech-mission-control.openDashboard');
+                vscode.commands.executeCommand('antigravity-mission-control.openDashboard');
             }
         });
         context.globalState.update('hasShownWelcome', true);
     }
 
+    // 5. Automated Quota Optimization: Immunize from Phantom Token Drain
+    const workspaceFolders = vscode.workspace.workspaceFolders;
+    if (workspaceFolders && workspaceFolders.length > 0) {
+        const rootPath = workspaceFolders[0].uri.fsPath;
+        const ignorePath = path.join(rootPath, '.antigravityignore');
+        if (!fs.existsSync(ignorePath) && !context.globalState.get('hasIgnoredPrompt_' + rootPath)) {
+            vscode.window.showInformationMessage(
+                'Automated Quota Optimization: Protect your quota from phantom token drain by ignoring non-code directories.',
+                'Create .antigravityignore',
+                'Dismiss'
+            ).then(selection => {
+                if (selection === 'Create .antigravityignore') {
+                    const template = `# Antigravity Ignore File
+# Prevents phantom token drain during background indexing
+
+# Dependencies
+node_modules/
+bower_components/
+vendor/
+
+# Build outputs
+dist/
+build/
+out/
+.next/
+.nuxt/
+
+# Version control
+.git/
+.svn/
+.hg/
+
+# IDE / Editor
+.idea/
+.vscode/
+.vs/
+
+# Testing & Coverage
+coverage/
+__snapshots__/
+.nyc_output/
+
+# Minified / Binary assets
+*.min.js
+*.min.css
+*.map
+*.pdf
+*.zip
+*.tar.gz
+*.woff
+*.woff2
+*.ttf
+*.eot
+*.ico
+*.png
+*.jpg
+*.jpeg
+*.gif
+*.mp4
+*.webm
+
+# Logs & temp
+*.log
+tmp/
+temp/
+.cache/
+`;
+                    fs.writeFileSync(ignorePath, template, 'utf8');
+                    vscode.window.showInformationMessage('✅ Immunized! .antigravityignore created.');
+                }
+                context.globalState.update('hasIgnoredPrompt_' + rootPath, true);
+            });
+        }
+    }
+
     // --- Status Bar Section ---
     const statusBarItem = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Right, 10000);
-    statusBarItem.command = 'anbutech-mission-control.openDashboard';
+    statusBarItem.command = 'antigravity-mission-control.openDashboard';
     context.subscriptions.push(statusBarItem);
 
     // 立即显示状态栏（初始状态）
@@ -89,7 +165,7 @@ export function activate(context: vscode.ExtensionContext) {
 
     /**
      * 🔄 IDE 账号同步检测
-     * 每次定时刷新时调用，检测 Anbutech IDE 中当前登录的账号
+     * 每次定时刷新时调用，检测 Antigravity IDE 中当前登录的账号
      * 是否与插件的 current_account_id 一致。
      * 
      * - 如果一致 → 无需操作
@@ -323,7 +399,7 @@ export function activate(context: vscode.ExtensionContext) {
                     t('openPanel')
                 ).then(selection => {
                     if (selection === t('openPanel')) {
-                        vscode.commands.executeCommand('anbutech-mission-control.openDashboard');
+                        vscode.commands.executeCommand('antigravity-mission-control.openDashboard');
                     }
                 });
 
@@ -340,6 +416,15 @@ export function activate(context: vscode.ExtensionContext) {
     }
 
     async function updateStatusBar() {
+        // Network Forensic: If TLS is blocked by VPN, short-circuit to prevent retry storm
+        if (tlsBlocked) {
+            statusBarItem.text = `$(shield) Network Blocked`;
+            statusBarItem.tooltip = '⚠️ VPN/Proxy is blocking AI connections. Use "Refresh All" to retry after disabling SSL-Inspection.';
+            statusBarItem.command = 'antigravity-mission-control.openDashboard';
+            statusBarItem.show();
+            return;
+        }
+
         const index = AccountManager.loadIndex();
         if (!index.current_account_id) {
             statusBarItem.text = `$(pulse) ${t('noAccount')}`;
@@ -405,7 +490,7 @@ export function activate(context: vscode.ExtensionContext) {
 
             // --- Auto-Rotate Check ---
             // When autoRotate is enabled and any model drops below 10%, suggest switching
-            const autoRotateEnabled = vscode.workspace.getConfiguration('anbutech-mission-control').get<boolean>('autoRotate', true);
+            const autoRotateEnabled = vscode.workspace.getConfiguration('antigravity-mission-control').get<boolean>('autoRotate', true);
             if (autoRotateEnabled && !quota.is_error && !quota.is_forbidden && quota.models) {
                 const lowModels = quota.models.filter((m: any) => m.percentage < 10);
                 if (lowModels.length > 0) {
@@ -443,7 +528,7 @@ export function activate(context: vscode.ExtensionContext) {
                                 'Switch Now', 'Dismiss'
                             );
                             if (choice === 'Switch Now') {
-                                vscode.commands.executeCommand('anbutech-mission-control.switchAccount', {
+                                vscode.commands.executeCommand('antigravity-mission-control.switchAccount', {
                                     accountId: bestAlt.id,
                                     email: bestAlt.email
                                 });
@@ -462,11 +547,11 @@ export function activate(context: vscode.ExtensionContext) {
                 const errorTooltip = new vscode.MarkdownString();
                 errorTooltip.isTrusted = true;
                 errorTooltip.supportHtml = true;
-                errorTooltip.appendMarkdown(`🛡️ **Anbutech Mission Control**\n\n`);
+                errorTooltip.appendMarkdown(`🛡️ **Antigravity Mission Control**\n\n`);
                 errorTooltip.appendMarkdown(`⚠️ ${t('quotaFetchError')}: ${errText}\n\n`);
                 errorTooltip.appendMarkdown(`*${t('quotaRetryHint')}*\n`);
                 statusBarItem.tooltip = errorTooltip;
-                statusBarItem.command = 'anbutech-mission-control.openDashboard';
+                statusBarItem.command = 'antigravity-mission-control.openDashboard';
                 statusBarItem.show();
                 return;
             }
@@ -492,7 +577,18 @@ export function activate(context: vscode.ExtensionContext) {
 
                         // 根据额度选择颜色图标
                         const icon = lowestModel.percentage > 50 ? "🟢" : (lowestModel.percentage > 20 ? "🟡" : "🔴");
-                        groupTexts.push(`${icon} ${group.name}: ${lowestModel.percentage}%`);
+                        // Weekly Cap "False Hope" Detector: show (Weekly Cap) when reset > 24h
+                        let capLabel = '';
+                        if (lowestModel.percentage === 0) {
+                            const rawReset = lowestModel.reset_time_raw;
+                            if (rawReset) {
+                                const diffMs = new Date(rawReset).getTime() - Date.now();
+                                if (diffMs > 24 * 60 * 60 * 1000) {
+                                    capLabel = ' (Weekly Cap)';
+                                }
+                            }
+                        }
+                        groupTexts.push(`${icon} ${group.name}: ${lowestModel.percentage}%${capLabel}`);
                     }
                 }
 
@@ -508,7 +604,7 @@ export function activate(context: vscode.ExtensionContext) {
             tooltip.isTrusted = true;
             tooltip.supportHtml = true;
 
-            tooltip.appendMarkdown(`🛡️ **Anbutech Mission Control**\n\n`);
+            tooltip.appendMarkdown(`🛡️ **Antigravity Mission Control**\n\n`);
 
 
             if (!quota.is_forbidden) {
@@ -601,7 +697,7 @@ export function activate(context: vscode.ExtensionContext) {
             }
 
             statusBarItem.tooltip = tooltip;
-            statusBarItem.command = 'anbutech-mission-control.openDashboard';
+            statusBarItem.command = 'antigravity-mission-control.openDashboard';
             statusBarItem.show();
 
             // 连接成功，重置错误状态
@@ -610,11 +706,23 @@ export function activate(context: vscode.ExtensionContext) {
         } catch (e: any) {
             connectionErrorCount++;
 
+            // Network Forensic: Detect TLS errors during regular polling too
+            const errMsg = e.message || e.toString() || '';
+            if (errMsg.includes('UNABLE_TO_VERIFY_LEAF_SIGNATURE') || errMsg.includes('CERT_HAS_EXPIRED') || errMsg.includes('SELF_SIGNED_CERT_IN_CHAIN')) {
+                tlsBlocked = true;
+                statusBarItem.text = `$(shield) Network Blocked`;
+                statusBarItem.tooltip = '⚠️ VPN/Proxy is blocking AI connections. Use "Refresh All" to retry after disabling SSL-Inspection.';
+                statusBarItem.command = 'antigravity-mission-control.openDashboard';
+                statusBarItem.show();
+                vscode.window.showErrorMessage("⚠️ Network Block Detected: Your VPN/Proxy is blocking the AI connection. Please disable SSL-Inspection or set 'http.proxyStrictSSL' to false. Use 'Refresh All' to retry.");
+                return;
+            }
+
             // 更新状态栏显示错误状态，点击时打开管理面板（而非仅重连）
             statusBarItem.text = `$(error) ${t('reconnect')}`;
             // 详细错误信息放在 tooltip 中，方便排查
             const errorTooltip = new vscode.MarkdownString();
-            errorTooltip.appendMarkdown(`**Anbutech Copilot**\n\n`);
+            errorTooltip.appendMarkdown(`**Antigravity Copilot**\n\n`);
             errorTooltip.appendMarkdown(`❌ *连接失败*\n\n`);
             errorTooltip.appendMarkdown(`错误信息: ${e.message || 'Unknown error'}\n\n`);
             if (e.response && e.response.status) {
@@ -624,12 +732,12 @@ export function activate(context: vscode.ExtensionContext) {
             statusBarItem.tooltip = errorTooltip;
 
             // 关键修复：错误状态下点击打开面板，而非僵死在 reconnect
-            statusBarItem.command = 'anbutech-mission-control.openDashboard';
+            statusBarItem.command = 'antigravity-mission-control.openDashboard';
             statusBarItem.show();
 
             // 避免频繁通知：使用配置的刷新间隔作为通知间隔
             const now = Date.now();
-            const notifyConfig = vscode.workspace.getConfiguration('anbutech-mission-control'); const notifyIntervalMs = (notifyConfig.get<number>('autoRefreshInterval', 5)) * 60 * 1000;
+            const notifyConfig = vscode.workspace.getConfiguration('antigravity-mission-control'); const notifyIntervalMs = (notifyConfig.get<number>('autoRefreshInterval', 5)) * 60 * 1000;
             const shouldNotify = !lastConnectionError || (now - lastNotificationTime > notifyIntervalMs);
 
             if (shouldNotify) {
@@ -646,7 +754,7 @@ export function activate(context: vscode.ExtensionContext) {
                     if (selection === t('reconnect')) {
                         updateStatusBar();
                     } else if (selection === t('openPanel')) {
-                        vscode.commands.executeCommand('anbutech-mission-control.openDashboard');
+                        vscode.commands.executeCommand('antigravity-mission-control.openDashboard');
                     }
                 });
             }
@@ -657,6 +765,13 @@ export function activate(context: vscode.ExtensionContext) {
     let lastConnectionError = false;
     let lastNotificationTime = 0;
     let connectionErrorCount = 0;
+
+    // Network Forensic: TLS block flag to suppress retry storms under VPN
+    let tlsBlocked = false;
+
+    // Cross-Model Switch Safety: 60-second cooldown to prevent dual-injector race conditions
+    let lastSwitchTimestamp = 0;
+    const SWITCH_COOLDOWN_MS = 60000;
 
     // Initial update: 先进行静默对账修剪微小误差，再检测 IDE 当前账号情况并刷新状态栏
     AccountManager.reconcileIndexAtStartup();
@@ -671,13 +786,13 @@ export function activate(context: vscode.ExtensionContext) {
     };
 
     // 注册刷新状态栏命令 (供分组管理等功能调用)
-    let refreshStatusBarCommand = vscode.commands.registerCommand('anbutech-mission-control.refreshStatusBar', () => {
+    let refreshStatusBarCommand = vscode.commands.registerCommand('antigravity-mission-control.refreshStatusBar', () => {
         updateStatusBar();
     });
     context.subscriptions.push(refreshStatusBarCommand);
 
     // 注册重新连接命令
-    let reconnectCommand = vscode.commands.registerCommand('anbutech-mission-control.reconnect', async () => {
+    let reconnectCommand = vscode.commands.registerCommand('antigravity-mission-control.reconnect', async () => {
         vscode.window.showInformationMessage(t('reconnecting'));
         try {
             await updateStatusBar();
@@ -701,20 +816,25 @@ export function activate(context: vscode.ExtensionContext) {
         }
 
         // 读取配置
-        const config = vscode.workspace.getConfiguration('anbutech-mission-control');
+        const config = vscode.workspace.getConfiguration('antigravity-mission-control');
         const intervalMinutes = config.get<number>('autoRefreshInterval', 5);
 
         if (intervalMinutes > 0) {
             const intervalMs = intervalMinutes * 60 * 1000;
             autoRefreshTimer = setInterval(async () => {
+                // Network Forensic: Skip auto-refresh if TLS is blocked
+                if (tlsBlocked) {
+                    console.log('[AutoRefresh] Skipped: TLS blocked by VPN. Use Refresh All to retry.');
+                    return;
+                }
                 // 先检测 IDE 账号是否变更，再刷新状态栏
                 const changed = await syncWithIdeAccount();
                 // Execute a full refresh of all accounts
-                await vscode.commands.executeCommand('anbutech-mission-control.refreshAllAccounts');
+                await vscode.commands.executeCommand('antigravity-mission-control.refreshAllAccounts');
             }, intervalMs);
-            console.log(`Anbutech Mission Control: 自动刷新已启用，间隔 ${intervalMinutes} 分钟`);
+            console.log(`Antigravity Mission Control: 自动刷新已启用，间隔 ${intervalMinutes} 分钟`);
         } else {
-            console.log('Anbutech Mission Control: 自动刷新已禁用');
+            console.log('Antigravity Mission Control: 自动刷新已禁用');
         }
     }
 
@@ -788,7 +908,7 @@ export function activate(context: vscode.ExtensionContext) {
     // 监听配置变化
     context.subscriptions.push(
         vscode.workspace.onDidChangeConfiguration(e => {
-            if (e.affectsConfiguration('anbutech-mission-control.autoRefreshInterval')) {
+            if (e.affectsConfiguration('antigravity-mission-control.autoRefreshInterval')) {
                 setupAutoRefresh();
                 vscode.window.showInformationMessage(t('autoRefreshUpdated'));
             }
@@ -813,38 +933,13 @@ export function activate(context: vscode.ExtensionContext) {
         }
     });
 
-    let refreshCommand = vscode.commands.registerCommand('anbutech-mission-control.refreshAccounts', () => {
+    let refreshCommand = vscode.commands.registerCommand('antigravity-mission-control.refreshAccounts', () => {
         accountTreeProvider.refresh();
     });
 
-    let refreshAllCommand = vscode.commands.registerCommand('anbutech-mission-control.refreshAllAccounts', async () => {
-        vscode.window.showInformationMessage('Refreshing all accounts...');
-        try {
-            const index = AccountManager.loadIndex();
-            let successCount = 0;
-            for (const acc of index.accounts) {
-                try {
-                    const fullAcc = AccountManager.loadAccount(acc.id);
-                    if (fullAcc.token) {
-                        AccountManager.clearQuotaCache(fullAcc.token.access_token);
-                        await AccountManager.fetchQuotaCached(fullAcc.token.access_token);
-                        successCount++;
-                    }
-                } catch (e) {
-                    console.error(`Failed to refresh account ${acc.id}:`, e);
-                }
-            }
-            DashboardProvider.refresh();
-            accountTreeProvider.refresh();
-            updateStatusBar();
-            vscode.window.showInformationMessage(`Refreshed ${successCount} accounts successfully.`);
-        } catch (e: any) {
-            vscode.window.showErrorMessage(`Refresh failed: ${e.message}`);
-        }
-    });
-    context.subscriptions.push(refreshAllCommand);
 
-    let addAccountCommand = vscode.commands.registerCommand('anbutech-mission-control.addAccount', async () => {
+
+    let addAccountCommand = vscode.commands.registerCommand('antigravity-mission-control.addAccount', async () => {
         try {
             const tokenInfo = await performOAuth();
             if (tokenInfo) {
@@ -901,11 +996,11 @@ export function activate(context: vscode.ExtensionContext) {
         }
     });
 
-    let switchAccountCommand = vscode.commands.registerCommand('anbutech-mission-control.switchAccount', async (item: any) => {
+    let switchAccountCommand = vscode.commands.registerCommand('antigravity-mission-control.switchAccount', async (item: any) => {
         const accountId = item.accountId;
         if (!accountId) { return; }
 
-        const config = vscode.workspace.getConfiguration('anbutech-mission-control');
+        const config = vscode.workspace.getConfiguration('antigravity-mission-control');
         const switchMode = config.get<string>('switchMode', 'advanced');
 
         const message =
@@ -942,6 +1037,17 @@ export function activate(context: vscode.ExtensionContext) {
             );
             return;
         }
+
+        // Cross-Model Switch Safety: 60-second cooldown guard
+        const now = Date.now();
+        if (now - lastSwitchTimestamp < SWITCH_COOLDOWN_MS) {
+            const remaining = Math.ceil((SWITCH_COOLDOWN_MS - (now - lastSwitchTimestamp)) / 1000);
+            vscode.window.showWarningMessage(
+                `⚠️ Switch Cooldown: Please wait ${remaining}s before switching again to prevent a Cross-Model Lockout.`
+            );
+            return;
+        }
+        lastSwitchTimestamp = now;
 
         // 高级模式下，先进行环境预检查
         const dbPathOverride = config.get<string>('databasePathOverride', '');
@@ -1046,7 +1152,7 @@ export function activate(context: vscode.ExtensionContext) {
         });
     });
 
-    let openDashboardCommand = vscode.commands.registerCommand('anbutech-mission-control.openDashboard', async () => {
+    let openDashboardCommand = vscode.commands.registerCommand('antigravity-mission-control.openDashboard', async () => {
         // Phase 0: 立即打开面板（使用本地缓存数据渲染，0 延迟）
         DashboardProvider.createOrShow(context.extensionUri);
 
@@ -1061,17 +1167,20 @@ export function activate(context: vscode.ExtensionContext) {
         updateStatusBar();
     });
 
-    let refreshAccountCommand = vscode.commands.registerCommand('anbutech-mission-control.refreshAccount', async (accountId: string) => {
+    let refreshAccountCommand = vscode.commands.registerCommand('antigravity-mission-control.refreshAccount', async (accountId: string, silent: boolean = false) => {
         try {
             await syncWithIdeAccount(); // 刷新前先主动侦测一次账号表更
             const account = AccountManager.loadAccount(accountId);
             if (account.token) {
                 const oldAccessToken = account.token.access_token;
-                const refreshed = await AccountManager.refreshToken(account.token.refresh_token);
-                account.token.access_token = refreshed.accessToken;
-                account.token.expiry_timestamp = Math.floor(Date.now() / 1000) + refreshed.expiresIn;
-                account.last_used = Date.now();
-                AccountManager.saveAccount(account);
+                // Only refresh token if expired or about to expire
+                if (!account.token.expiry_timestamp || Date.now() / 1000 > account.token.expiry_timestamp - 300) {
+                    const refreshed = await AccountManager.refreshToken(account.token.refresh_token);
+                    account.token.access_token = refreshed.accessToken;
+                    account.token.expiry_timestamp = Math.floor(Date.now() / 1000) + refreshed.expiresIn;
+                    account.last_used = Date.now();
+                    AccountManager.saveAccount(account);
+                }
                 // 仅清除该账号旧 Token 的缓存，不影响其他账号
                 AccountManager.clearQuotaCache(oldAccessToken);
                 // 立即用新 Token 获取最新配额（写入缓存），供 Dashboard 直接读取
@@ -1079,14 +1188,17 @@ export function activate(context: vscode.ExtensionContext) {
                 accountTreeProvider.refresh();
                 DashboardProvider.refresh(); // 刷新设置面板
                 updateStatusBar(); // 同步刷新状态栏限额数据
-                vscode.window.showInformationMessage(t('refreshSuccess', account.email));
+                
+                if (!silent) {
+                    vscode.window.showInformationMessage(t('refreshSuccess', account.email));
+                }
             }
         } catch (e) {
             vscode.window.showErrorMessage(t('refreshFailed', (e as Error).message));
         }
     });
 
-    let deleteAccountCommand = vscode.commands.registerCommand('anbutech-mission-control.deleteAccount', async (item: any) => {
+    let deleteAccountCommand = vscode.commands.registerCommand('antigravity-mission-control.deleteAccount', async (item: any) => {
         const accountId = item.accountId;
         const email = item.email || '未命名账号';
 
@@ -1114,7 +1226,7 @@ export function activate(context: vscode.ExtensionContext) {
         }
     });
 
-    let refreshAllAccountsCommand = vscode.commands.registerCommand('anbutech-mission-control.refreshAllAccounts', async () => {
+    let refreshAllAccountsCommand = vscode.commands.registerCommand('antigravity-mission-control.refreshAllAccounts', async () => {
         await vscode.window.withProgress({
             location: vscode.ProgressLocation.Notification,
             title: t('loading'),
@@ -1124,6 +1236,8 @@ export function activate(context: vscode.ExtensionContext) {
             await syncWithIdeAccount(); // 新增：刷新前先主动侦测一次
             
             AccountManager.clearQuotaCache(); // 手动刷新全部 → 清除缓存
+            AccountManager.clearBackoffState(); // 手动刷新 → 绕过指数退避冷却
+            tlsBlocked = false; // 手动刷新 → 清除 VPN 阻断标志，允许重试
             const index = AccountManager.loadIndex();
             const total = index.accounts.length;
             
@@ -1134,11 +1248,18 @@ export function activate(context: vscode.ExtensionContext) {
                 try {
                     const account = AccountManager.loadAccount(accSum.id);
                     if (account.token) {
-                        const refreshed = await AccountManager.refreshToken(account.token.refresh_token);
-                        account.token.access_token = refreshed.accessToken;
-                        account.token.expiry_timestamp = Math.floor(Date.now() / 1000) + refreshed.expiresIn;
-                        account.last_used = Date.now();
-                        AccountManager.saveAccount(account);
+                        if (!account.token.expiry_timestamp || Date.now() / 1000 > account.token.expiry_timestamp - 300) {
+                            const refreshed = await AccountManager.refreshToken(account.token.refresh_token);
+                            account.token.access_token = refreshed.accessToken;
+                            account.token.expiry_timestamp = Math.floor(Date.now() / 1000) + refreshed.expiresIn;
+                            account.last_used = Date.now();
+                            AccountManager.saveAccount(account);
+                        }
+                        // Anti-Tokenware: OS-Level Edge Case
+                        // Always apply 300-700ms jitter, even on the first request, 
+                        // to prevent WAF spikes if multiple extension hosts boot simultaneously.
+                        await new Promise(r => setTimeout(r, 300 + Math.random() * 400));
+
                         // 立即获取配额写入缓存，供 Dashboard 直接读取
                         await AccountManager.fetchQuotaCached(account.token.access_token);
                     }
@@ -1158,7 +1279,7 @@ export function activate(context: vscode.ExtensionContext) {
     });
 
     // --- Token 登录命令 ---
-    let loginWithTokenCommand = vscode.commands.registerCommand('anbutech-mission-control.loginWithToken', async (refreshTokenArg?: string) => {
+    let loginWithTokenCommand = vscode.commands.registerCommand('antigravity-mission-control.loginWithToken', async (refreshTokenArg?: string) => {
         try {
             // 支持从 Dashboard 传入 token，或弹出输入框让用户手动输入
             let refreshTokenInput = refreshTokenArg;
@@ -1249,7 +1370,7 @@ export function activate(context: vscode.ExtensionContext) {
     context.subscriptions.push(loginWithTokenCommand);
 
     // --- 导出 Token 命令 ---
-    let exportTokenCommand = vscode.commands.registerCommand('anbutech-mission-control.exportToken', async (accountId?: string) => {
+    let exportTokenCommand = vscode.commands.registerCommand('antigravity-mission-control.exportToken', async (accountId?: string) => {
         try {
             // 如果未传入 accountId，使用当前活跃账号
             if (!accountId) {
@@ -1286,7 +1407,7 @@ export function activate(context: vscode.ExtensionContext) {
     context.subscriptions.push(exportTokenCommand);
 
     // --- 批量导出 Token 命令 ---
-    let batchExportCommand = vscode.commands.registerCommand('anbutech-mission-control.batchExportTokens', async () => {
+    let batchExportCommand = vscode.commands.registerCommand('antigravity-mission-control.batchExportTokens', async () => {
         try {
             const index = AccountManager.loadIndex();
             const exportData: { version: number; accounts: { email: string; refresh_token: string }[] } = {
@@ -1331,7 +1452,7 @@ export function activate(context: vscode.ExtensionContext) {
     context.subscriptions.push(batchExportCommand);
 
     // --- 批量导入 Token 命令 ---
-    let batchImportCommand = vscode.commands.registerCommand('anbutech-mission-control.batchImportTokens', async (jsonText?: string) => {
+    let batchImportCommand = vscode.commands.registerCommand('antigravity-mission-control.batchImportTokens', async (jsonText?: string) => {
         try {
             // 支持从 Dashboard 传入 JSON，或弹出输入框
             let input = jsonText;
@@ -1456,7 +1577,7 @@ export function activate(context: vscode.ExtensionContext) {
     context.subscriptions.push(batchImportCommand);
 
     // 打开外部切换代理日志目录（ag_switch_*.log 所在的临时目录）
-    let openSwitchLogsCommand = vscode.commands.registerCommand('anbutech-mission-control.openSwitchLogs', async () => {
+    let openSwitchLogsCommand = vscode.commands.registerCommand('antigravity-mission-control.openSwitchLogs', async () => {
         const tempDir = os.tmpdir();
         const uri = vscode.Uri.file(tempDir);
         await vscode.env.openExternal(uri);
@@ -1464,12 +1585,12 @@ export function activate(context: vscode.ExtensionContext) {
     });
 
     // 环境自检命令
-    let diagnoseEnvironmentCommand = vscode.commands.registerCommand('anbutech-mission-control.diagnoseEnvironment', async () => {
+    let diagnoseEnvironmentCommand = vscode.commands.registerCommand('antigravity-mission-control.diagnoseEnvironment', async () => {
         const { execSync } = require('child_process');
         const fs = require('fs');
         const path = require('path');
         const platform = os.platform();
-        const config = vscode.workspace.getConfiguration('anbutech-mission-control');
+        const config = vscode.workspace.getConfiguration('antigravity-mission-control');
 
         const results: string[] = [];
         results.push(t('envDiagnoseTitle'));
@@ -1518,7 +1639,7 @@ export function activate(context: vscode.ExtensionContext) {
         }
         results.push('');
 
-        // 3. Anbutech 可执行文件检测
+        // 3. Antigravity 可执行文件检测
         results.push(t('exeSection'));
         const exePathConfig = config.get<{ win32?: string; darwin?: string; linux?: string }>('antigravityExecutablePath', {});
         let exePath = '';
@@ -1659,7 +1780,7 @@ export function activate(context: vscode.ExtensionContext) {
     });
 
     // --- Quick Switch to Healthiest Account (Ctrl+Shift+A) ---
-    let quickSwitchCommand = vscode.commands.registerCommand('anbutech-mission-control.quickSwitch', async () => {
+    let quickSwitchCommand = vscode.commands.registerCommand('antigravity-mission-control.quickSwitch', async () => {
         try {
             const index = AccountManager.loadIndex();
             if (!index || !index.accounts || index.accounts.length === 0) {
@@ -1703,7 +1824,7 @@ export function activate(context: vscode.ExtensionContext) {
             );
 
             if (choice === 'Switch Now') {
-                vscode.commands.executeCommand('anbutech-mission-control.switchAccount', {
+                vscode.commands.executeCommand('antigravity-mission-control.switchAccount', {
                     accountId: bestAccount.id,
                     email: bestAccount.email
                 });
@@ -1728,10 +1849,67 @@ export function activate(context: vscode.ExtensionContext) {
         quickSwitchCommand
     );
 
-    // --- 启动时自动同步 IDE 真实登录状态 ---
+    // 3. Terminal Stream Integrity Check
+    let checkTerminalHealthCommand = vscode.commands.registerCommand('antigravity-mission-control.checkTerminalHealth', () => {
+        let issuesFound = false;
+        let checkedFiles: string[] = [];
+        
+        const homeDir = os.homedir();
+        const profilesToCheck = [
+            path.join(homeDir, '.bashrc'),
+            path.join(homeDir, '.bash_profile'),
+            path.join(homeDir, '.profile'),
+            path.join(homeDir, '.zshrc'),
+            path.join(homeDir, '.zprofile'),
+            path.join(homeDir, 'Documents', 'WindowsPowerShell', 'Microsoft.PowerShell_profile.ps1'),
+            path.join(homeDir, 'Documents', 'WindowsPowerShell', 'profile.ps1'),
+            path.join(homeDir, 'Documents', 'PowerShell', 'Microsoft.PowerShell_profile.ps1'),
+            path.join(homeDir, 'Documents', 'PowerShell', 'profile.ps1')
+        ];
+
+        const interferingPatterns = [
+            'oh-my-posh',
+            'starship',
+            'powerlevel10k',
+            'powerlevel9k',
+            'oh-my-zsh',
+            'p10k',
+            'pure prompt',
+            'spaceship-prompt'
+        ];
+
+        for (const profile of profilesToCheck) {
+            if (fs.existsSync(profile)) {
+                checkedFiles.push(path.basename(profile));
+                try {
+                    const content = fs.readFileSync(profile, 'utf8').toLowerCase();
+                    const detected = interferingPatterns.filter(p => content.includes(p));
+                    if (detected.length > 0) {
+                        issuesFound = true;
+                        vscode.window.showWarningMessage(
+                            `⚠️ Terminal Interference Detected in ${path.basename(profile)}: Found [${detected.join(', ')}]. These tools inject ANSI escape sequences and OSC control codes into the prompt string, which corrupts the JSON-RPC observation stream used by the Antigravity agent. This causes "Agent Terminated" errors. Recommendation: Set a plain prompt for VS Code's integrated terminal using terminal.integrated.profiles or disable these tools when using Antigravity.`
+                        );
+                    }
+                } catch (e) {
+                    console.error('Failed to read profile', profile, e);
+                }
+            }
+        }
+
+        if (!issuesFound) {
+            vscode.window.showInformationMessage(`✅ Terminal Health Check Passed. Evaluated: ${checkedFiles.join(', ') || 'No profiles found'}. No known interfering prompt themes detected.`);
+        }
+    });
+    context.subscriptions.push(checkTerminalHealthCommand);
+
+    // --- 启动时自动同步 IDE 真实登录状态 (with Handshake Guard) ---
     setTimeout(async () => {
         try {
             console.log('正在检查 IDE 数据库中的真实登录状态...');
+
+            // Show INITIALIZING state during handshake guard
+            statusBarItem.text = `$(sync~spin) Initializing...`;
+            statusBarItem.tooltip = 'Verifying account handshake with backend...';
 
             // 启动阶段优先等待 antigravityAuthStatus 稳定，避免误信滞后的 oauthToken
             const dbPath = getConfiguredDbPath();
@@ -1746,6 +1924,49 @@ export function activate(context: vscode.ExtensionContext) {
                         if (changed) {
                             updateStatusBar();
                         }
+
+                        // 2. Launch Environment Validation (Windows)
+                        if (process.platform === 'win32' && !process.env.HOME) {
+                            statusBarItem.backgroundColor = new vscode.ThemeColor('statusBarItem.errorBackground');
+                            statusBarItem.text = `$(warning) Terminal Blindness Risk`;
+                            statusBarItem.tooltip = `⚠️ Terminal Blindness Risk: IDE launched via shortcut. Restart via Mission Control to enable Browser Subagent.`;
+                            vscode.window.showWarningMessage("⚠️ Terminal Blindness Risk: IDE launched via shortcut. Restart via Mission Control to enable Browser Subagent.");
+                        }
+
+                        // === HANDSHAKE GUARD ===
+                        // Verify backend tier handshake (loadCodeAssist HTTP 200)
+                        // This prevents eager prompts from triggering 429 "Resource Exhausted"
+                        // before the backend has identified the user's paid tier.
+                        try {
+                            const index = AccountManager.loadIndex();
+                            if (index.current_account_id) {
+                                const currentAccount = AccountManager.loadAccount(index.current_account_id);
+                                if (currentAccount.token) {
+                                    statusBarItem.text = `$(shield) Handshake Guard...`;
+                                    statusBarItem.tooltip = 'Verifying quota tier with Google Cloud backend...';
+                                    // OS-Level Edge Case: Add startup jitter before handshake
+                                    await new Promise(r => setTimeout(r, 300 + Math.random() * 400));
+
+                                    // Perform the actual loadCodeAssist handshake
+                                    const quotaResult = await AccountManager.fetchQuotaCached(currentAccount.token.access_token);
+                                    
+                                    if (quotaResult && !quotaResult.is_error) {
+                                        console.log(`[Handshake Guard] ✅ Backend tier verified: ${quotaResult.tier || 'STANDARD'}`);
+                                    } else {
+                                        console.warn(`[Handshake Guard] ⚠️ Backend returned error, agent prompts may trigger 429.`);
+                                    }
+                                }
+                            }
+                        } catch (guardErr: any) {
+                            console.warn('[Handshake Guard] Failed to verify backend tier:', guardErr);
+                            // 1. Network Forensic Guard
+                            const errStr = guardErr.toString();
+                            if (errStr.includes('UNABLE_TO_VERIFY_LEAF_SIGNATURE') || errStr.includes('CERT_HAS_EXPIRED') || errStr.includes('SELF_SIGNED_CERT_IN_CHAIN')) {
+                                tlsBlocked = true; // Suppress background polling retry storm
+                                vscode.window.showErrorMessage("⚠️ Network Block Detected: Your VPN/Proxy is blocking the AI Handshake. Please disable SSL-Inspection or set 'http.proxyStrictSSL' to false. Use 'Refresh All' to retry.");
+                            }
+                        }
+
                         startupSynced = true;
                         break;
                     }
@@ -1767,10 +1988,36 @@ export function activate(context: vscode.ExtensionContext) {
             if (!startupSynced) {
                 console.log('启动同步未发现稳定登录态，跳过本轮自动同步。');
             }
+
+            // Final: update status bar to Ready state
+            updateStatusBar();
         } catch (e) {
             console.error('自动同步状态失败:', e);
+            updateStatusBar(); // Ensure status bar isn't stuck on "Initializing"
         }
     }, 8000); // 延迟 8 秒执行，等待 IDE 完全初始化
+
+    // Memory Leak & Zombie Prevention: Register cleanup for all active background loops
+    context.subscriptions.push({
+        dispose: () => {
+            if (autoRefreshTimer) {
+                clearInterval(autoRefreshTimer);
+                autoRefreshTimer = undefined;
+            }
+            if (dbWatchTimeout) {
+                clearTimeout(dbWatchTimeout);
+                dbWatchTimeout = undefined;
+            }
+            if (dbWatchRetryTimeout) {
+                clearTimeout(dbWatchRetryTimeout);
+                dbWatchRetryTimeout = undefined;
+            }
+            if (dbWatcher) {
+                dbWatcher.close();
+                dbWatcher = undefined;
+            }
+        }
+    });
 }
 
 async function performOAuth(): Promise<any> {

@@ -23,7 +23,7 @@ export class DashboardProvider {
 
         const panel = vscode.window.createWebviewPanel(
             DashboardProvider.viewType,
-            'Anbutech Mission Control',
+            'Antigravity Mission Control',
             column || vscode.ViewColumn.One,
             {
                 enableScripts: true,
@@ -59,7 +59,7 @@ export class DashboardProvider {
 
         // 监听配置变化（特别是语言切换），实时刷新界面以应用新翻译
         vscode.workspace.onDidChangeConfiguration(e => {
-            if (e.affectsConfiguration('anbutech-mission-control.language')) {
+            if (e.affectsConfiguration('antigravity-mission-control.language')) {
                 this._update();
             }
         }, null, this._disposables);
@@ -69,37 +69,37 @@ export class DashboardProvider {
                 try {
                     switch (message.command) {
                         case 'switch':
-                            await vscode.commands.executeCommand('anbutech-mission-control.switchAccount', { accountId: message.accountId, email: message.email });
+                            await vscode.commands.executeCommand('antigravity-mission-control.switchAccount', { accountId: message.accountId, email: message.email });
                             this._update();
                             return;
                         case 'refresh':
-                            await vscode.commands.executeCommand('anbutech-mission-control.refreshAccount', message.accountId);
+                            await vscode.commands.executeCommand('antigravity-mission-control.refreshAccount', message.accountId, message.silent);
                             this._update();
                             return;
                         case 'refreshAll':
-                            await vscode.commands.executeCommand('anbutech-mission-control.refreshAllAccounts');
+                            await vscode.commands.executeCommand('antigravity-mission-control.refreshAllAccounts');
                             this._update();
                             return;
                         case 'addAccount':
-                            await vscode.commands.executeCommand('anbutech-mission-control.addAccount');
+                            await vscode.commands.executeCommand('antigravity-mission-control.addAccount');
                             this._update();
                             return;
                         case 'loginWithToken':
-                            await vscode.commands.executeCommand('anbutech-mission-control.loginWithToken', message.token);
+                            await vscode.commands.executeCommand('antigravity-mission-control.loginWithToken', message.token);
                             this._update();
                             return;
                         case 'exportToken':
-                            await vscode.commands.executeCommand('anbutech-mission-control.exportToken', message.accountId);
+                            await vscode.commands.executeCommand('antigravity-mission-control.exportToken', message.accountId);
                             return;
                         case 'batchExportTokens':
-                            await vscode.commands.executeCommand('anbutech-mission-control.batchExportTokens');
+                            await vscode.commands.executeCommand('antigravity-mission-control.batchExportTokens');
                             return;
                         case 'batchImportTokens':
-                            await vscode.commands.executeCommand('anbutech-mission-control.batchImportTokens', message.jsonText);
+                            await vscode.commands.executeCommand('antigravity-mission-control.batchImportTokens', message.jsonText);
                             this._update();
                             return;
                         case 'delete':
-                            await vscode.commands.executeCommand('anbutech-mission-control.deleteAccount', { accountId: message.accountId, email: message.email });
+                            await vscode.commands.executeCommand('antigravity-mission-control.deleteAccount', { accountId: message.accountId, email: message.email });
                             return;
 
                         // === 分组管理相关命令 ===
@@ -124,7 +124,7 @@ export class DashboardProvider {
                                 command: 'groupsConfig',
                                 config: autoConfig
                             });
-                            vscode.commands.executeCommand('anbutech-mission-control.refreshStatusBar');
+                            vscode.commands.executeCommand('antigravity-mission-control.refreshStatusBar');
                             vscode.window.showInformationMessage(`已自动创建 ${autoGroups.length} 个分组`);
                             return;
 
@@ -187,10 +187,14 @@ export class DashboardProvider {
                         case 'saveGroups':
                             // 直接保存完整分组配置
                             ModelGroupManager.saveGroups(message.config);
-                            vscode.commands.executeCommand('anbutech-mission-control.refreshStatusBar');
+                            vscode.commands.executeCommand('antigravity-mission-control.refreshStatusBar');
                             vscode.window.showInformationMessage(t('configSaved'));
                             return;
 
+                        case 'updateAutoRefreshInterval':
+                            // Update the global configuration which triggers setupAutoRefresh in extension.ts
+                            vscode.workspace.getConfiguration('antigravity-mission-control').update('autoRefreshInterval', parseInt(message.interval), vscode.ConfigurationTarget.Global);
+                            return;
 
 
                         case 'updateUiState':
@@ -198,6 +202,79 @@ export class DashboardProvider {
                             const uiIndex = AccountManager.loadIndex();
                             uiIndex.ui_state = { ...uiIndex.ui_state, ...message.state };
                             AccountManager.saveIndex(uiIndex);
+                            return;
+
+                        // === Requirement 5: Safe Clean - Reset corrupted agent trajectories ===
+                        case 'safeClean':
+                            const workspaceFolders = vscode.workspace.workspaceFolders;
+                            if (!workspaceFolders || workspaceFolders.length === 0) {
+                                vscode.window.showWarningMessage('No workspace folder open. Please open a project first.');
+                                return;
+                            }
+
+                            const confirmClean = await vscode.window.showWarningMessage(
+                                'Safe Clean: This will delete .antigravity/ and .jetski/ folders in your project root to reset corrupted agent sessions. Your code files will NOT be affected.',
+                                { modal: true },
+                                'Clean Now',
+                                'Cancel'
+                            );
+
+                            if (confirmClean !== 'Clean Now') { return; }
+
+                            const rootPath = workspaceFolders[0].uri.fsPath;
+                            const cleanTargets = ['.antigravity', '.jetski'];
+                            let cleanedCount = 0;
+                            const fs = require('fs');
+                            const path = require('path');
+
+                            for (const dir of cleanTargets) {
+                                const fullPath = path.join(rootPath, dir);
+                                if (fs.existsSync(fullPath)) {
+                                    try {
+                                        fs.rmSync(fullPath, { recursive: true, force: true });
+                                        cleanedCount++;
+                                        console.log(`[Safe Clean] Removed: ${fullPath}`);
+                                    } catch (cleanErr: any) {
+                                        console.error(`[Safe Clean] Failed to remove ${fullPath}:`, cleanErr);
+                                        vscode.window.showErrorMessage(`Failed to clean ${dir}: ${cleanErr.message}`);
+                                    }
+                                }
+                            }
+
+                            // OS-Level Edge Case: Git Config Conflict Detection (Claude Code workaround)
+                            let gitFixed = false;
+                            try {
+                                const gitConfigPath = path.join(rootPath, '.git', 'config');
+                                if (fs.existsSync(gitConfigPath)) {
+                                    let configContent = fs.readFileSync(gitConfigPath, 'utf8');
+                                    let needsSave = false;
+
+                                    if (configContent.includes('worktreeConfig = true')) {
+                                        configContent = configContent.replace(/\s*worktreeConfig\s*=\s*true/gi, '');
+                                        needsSave = true;
+                                        console.log('[Safe Clean] Removed worktreeConfig = true from Git config');
+                                    }
+
+                                    if (configContent.match(/repositoryformatversion\s*=\s*[1-9]\d*/i)) {
+                                        configContent = configContent.replace(/(repositoryformatversion\s*=\s*)[1-9]\d*/gi, '$10');
+                                        needsSave = true;
+                                        console.log('[Safe Clean] Downgraded repositoryformatversion to 0');
+                                    }
+
+                                    if (needsSave) {
+                                        fs.writeFileSync(gitConfigPath, configContent, 'utf8');
+                                        gitFixed = true;
+                                    }
+                                }
+                            } catch (gitErr) {
+                                console.error('[Safe Clean] Git config patch failed:', gitErr);
+                            }
+
+                            if (cleanedCount > 0 || gitFixed) {
+                                vscode.window.showInformationMessage(`Safe Clean complete: ${cleanedCount} folder(s) removed.${gitFixed ? ' Git config conflicts resolved.' : ''} Restart your agent session.`);
+                            } else {
+                                vscode.window.showInformationMessage('No agent trajectory folders or Git conflicts found in the project root.');
+                            }
                             return;
                     }
                 } catch (err: any) {
@@ -261,7 +338,7 @@ export class DashboardProvider {
                         } catch (e: any) {
                             if (e.response && e.response.status === 401) {
                                 // 发现 401 自动触发状态栏的刷新逻辑（含 Token 自动刷新）
-                                vscode.commands.executeCommand('anbutech-mission-control.refreshStatusBar');
+                                vscode.commands.executeCommand('antigravity-mission-control.refreshStatusBar');
                             }
                         }
                     } else {
@@ -310,16 +387,19 @@ export class DashboardProvider {
     }
 
     private _getHtmlForWebview(accountsData: any[], groupsConfig: any, uiState: any = {}) {
+        const config = vscode.workspace.getConfiguration('antigravity-mission-control');
+        const autoRefreshInterval = config.get<number>('autoRefreshInterval', 5);
         const accountsJson = JSON.stringify(accountsData);
         const groupsJson = JSON.stringify(groupsConfig);
         const translationsJson = JSON.stringify(getTranslations());
         const uiStateJson = JSON.stringify(uiState);
 
-        const jsTemplate = "const vscode = acquireVsCodeApi();\nconst state = vscode.getState() || {};\nlet accounts = ACCOUNTS_PLACEHOLDER;\nlet groupsConfig = GROUPS_PLACEHOLDER;\nlet activeAccountId = state.activeAccountId;\n\nif (!activeAccountId || !accounts.find(a => a.id === activeAccountId)) {\n    const current = accounts.find(a => a.isCurrent);\n    activeAccountId = current ? current.id : (accounts[0] ? accounts[0].id : null);\n}\n\n// Ensure at least one account is selected\nfunction ensureActive() {\n    if (!accounts.find(a => a.id === activeAccountId) && accounts.length > 0) {\n        activeAccountId = accounts[0].id;\n    }\n}\nensureActive();\n\nwindow.addEventListener('message', event => {\n    const m = event.data;\n    if (m.command === 'groupsConfig') { groupsConfig = m.config; renderGroupsList(); }\n    else if (m.command === 'updateAccounts') {\n        accounts = m.accounts;\n        if (m.uiState) state.uiState = m.uiState;\n        ensureActive();\n        renderAll();\n    }\n});\n\n// Automatic refresh of the selected account telemetry every 1 minute\nsetInterval(() => {\n    if (activeAccountId) {\n        doRefresh(activeAccountId);\n    }\n}, 60000);\n\nfunction pctColor(p) { return p > 50 ? '#00ff66' : p > 20 ? '#d4a843' : '#ff2a2a'; }\n\nfunction renderAll() {\n    renderFocusNode();\n    renderFleetGrid();\n    renderTrafficNetwork();\n    document.getElementById('fleetCount').textContent = accounts.length;\n}\n\nfunction renderTrafficNetwork() {\n    // Determine overall traffic status for Gemini and Claude\n    const families = { 'GEMINI': false, 'CLAUDE': false };\n    \n    accounts.forEach(acc => {\n        if (acc.quota && acc.quota.is_error) {\n            const isRateLimit = acc.quota.error_status === 429;\n            const msgLower = (acc.quota.error_message || '').toLowerCase();\n            const isHighTraffic = msgLower.includes('high traffic') || msgLower.includes('rate limit') || msgLower.includes('too many requests') || msgLower.includes('resource exhausted');\n            \n            if (isRateLimit || isHighTraffic) {\n                if (acc.quota.models && acc.quota.models.length > 0) {\n                    acc.quota.models.forEach(m => {\n                        if (m.name.toLowerCase().includes('gemini')) families['GEMINI'] = true;\n                        if (m.name.toLowerCase().includes('claude')) families['CLAUDE'] = true;\n                    });\n                } else {\n                    // No model info available, mark both as throttled\n                    families['GEMINI'] = true;\n                    families['CLAUDE'] = true;\n                }\n            }\n        }\n    });\n\n    let h = '';\n    for (const [fam, throttled] of Object.entries(families)) {\n        h += `\n        <div class=\"traffic-item\">\n            <span class=\"traffic-name\">${fam} API</span>\n            ${throttled \n                ? '<span class=\"traffic-badge tb-throttle\">THROTTLED</span>' \n                : '<span class=\"traffic-badge tb-clear\">CLEAR</span>'}\n        </div>`;\n    }\n    document.getElementById('trafficStatusList').innerHTML = h;\n}\n\nfunction renderFocusNode() {\n    const panel = document.getElementById('focusNode');\n    const bdown = document.getElementById('modelsBreakdown');\n    const acc = accounts.find(a => a.id === activeAccountId);\n    if (!acc) {\n        panel.innerHTML = '<div style=\"color:var(--text-muted);text-align:center;margin-top:50px\">NO ACCOUNT SELECTED</div>';\n        bdown.innerHTML = '';\n        return;\n    }\n\n    const isErr = acc.quota && acc.quota.is_error;\n    const isRl = isErr && acc.quota.error_status === 429;\n    let totalUsed = 0, totalLimit = 0, mCount = 0, health = 0, consumed = 0;\n\n    if (acc.quota && acc.quota.models && !isErr) {\n        let sum = 0;\n        acc.quota.models.forEach(m => {\n            mCount++;\n            sum += m.percentage;\n            totalUsed += m.used || 0;\n            totalLimit += m.limit || 0;\n        });\n        health = mCount > 0 ? Math.round(sum / mCount) : 0;\n        consumed = mCount > 0 ? (100 - health) : 0;\n    }\n\n    const tier = (acc.quota && acc.quota.tier) ? acc.quota.tier : 'UNKNOWN TIER';\n    const displayName = acc.name || acc.email.split('@')[0];\n    \n    // Top Hero section\n    let h = `\n        <div class=\"hero-top\">\n            <div class=\"hero-info\">\n                <div class=\"hero-name\">${displayName}${acc.isCurrent ? '<span class=\"live-indicator\">LIVE</span>' : ''}</div>\n                <div class=\"hero-email\">${acc.email} | ${tier}</div>\n            </div>\n            <div class=\"hero-actions\">\n                ${!acc.isCurrent ? `<button class=\"action-btn\" onclick=\"doSwitch('${acc.id}','${acc.email}')\">ACTIVATE</button>` : ''}\n                <button class=\"action-btn ghost\" onclick=\"doRefresh('${acc.id}')\">REFRESH</button>\n                <button class=\"action-btn ghost\" onclick=\"doExportToken('${acc.id}')\">EXPORT</button>\n                <button class=\"action-btn danger\" onclick=\"doDelete('${acc.id}','${acc.email}')\">DELETE</button>\n            </div>\n        </div>\n        <div class=\"hero-stats\">\n            <div class=\"stat-box\">\n                <div class=\"stat-val\" style=\"color:${isErr ? 'var(--text-muted)' : pctColor(health)}\">${isErr ? 'ERR' : health + '%'}</div>\n                <div class=\"stat-lbl\">Integrity</div>\n            </div>\n            <div class=\"stat-box\">\n                <div class=\"stat-val\" style=\"color:var(--cyan)\">${mCount}</div>\n                <div class=\"stat-lbl\">Models</div>\n            </div>\n            <div class=\"stat-box\">\n                <div class=\"stat-val\" style=\"color:var(--gold)\">${consumed}%</div>\n                <div class=\"stat-lbl\">Used</div>\n            </div>\n        </div>\n    `;\n\n    panel.innerHTML = h;\n\n    // Breakdown section\n    let b = '<div class=\"card-title\" style=\"display:flex;justify-content:space-between;align-items:center\"><span>MODEL TELEMETRY</span><button class=\"action-btn ghost\" style=\"padding:2px 8px;font-size:9px\" onclick=\"toggleModelFilter(event)\">FILTER</button></div>';\n    \n    // Build filter dropdown globally\n    let filterDD = '<div class=\"gc-dd\" id=\"modelFilterDD\" style=\"padding:10px;max-height:250px;overflow-y:auto;z-index:9999\">';\n    const hiddenModels = state.uiState?.hiddenModels || [];\n    const allModels = getAllModels();\n    \n    allModels.forEach(m => {\n        const checked = !hiddenModels.includes(m.name) ? 'checked' : '';\n        filterDD += `<label style=\"display:block;margin-bottom:5px;font-size:11px;color:#fff;cursor:pointer\">\n            <input type=\"checkbox\" ${checked} onchange=\"toggleHideModel('${m.name}', this.checked)\"> ${m.name}\n        </label>`;\n    });\n    filterDD += '</div>';\n    b += filterDD;\n\n    if (mCount > 0 && !isErr) {\n        b += '<div class=\"model-bars\">';\n        acc.quota.models.forEach(m => {\n            if (hiddenModels.includes(m.name)) return;\n            const c = pctColor(m.percentage);\n            let rTime = 'Ready';\n            if (m.reset_time_raw || m.reset_time) {\n                const diff = new Date(m.reset_time_raw || m.reset_time).getTime() - Date.now();\n                if (diff > 0) rTime = Math.floor(diff/3600000)+'h '+Math.floor((diff%3600000)/60000)+'m';\n            }\n            const cons = 100 - m.percentage;\n            const usedVal = m.used || 0;\n            const limitVal = m.limit || 0;\n            const uStr = (usedVal > 0 || limitVal > 0) ? `${usedVal.toLocaleString()} / ${limitVal.toLocaleString()} tokens` : `${cons}% used`;\n\n            b += `\n            <div class=\"m-bar-wrap\">\n                <div class=\"m-bar-top\"><span>${m.name}</span><span style=\"color:${c}\">${m.percentage}%</span></div>\n                <div class=\"m-bar-track\"><div class=\"m-bar-fill\" style=\"width:${m.percentage}%;background:${c};color:${c}\"></div></div>\n                <div class=\"m-bar-sub\"><span>${uStr}</span><span>Reset: ${rTime}</span></div>\n            </div>`;\n        });\n        b += '</div>';\n    } else if (isErr) {\n        b += `<div style=\"text-align:center;padding:20px;color:var(--red);font-family:monospace\">\n            <div style=\"font-size:14px;margin-bottom:5px\">[ HTTP ${isRl ? 429 : 500} ]</div>\n            <div>${isRl ? 'RATE LIMIT DETECTED' : 'TELEMETRY FAILURE'}</div>\n            <div style=\"font-size:10px;margin-top:5px;color:var(--text-muted)\">${acc.quota.error_message || ''}</div>\n        </div>`;\n    } else {\n        b += `<div style=\"text-align:center;padding:20px;color:var(--text-muted);font-family:monospace\">AWAITING TELEMETRY DATA...</div>`;\n    }\n    bdown.innerHTML = b;\n}\n\nfunction renderFleetGrid() {\n    const grid = document.getElementById('topology');\n    let h = '';\n    accounts.forEach(acc => {\n        const isCur = acc.isCurrent;\n        const isSel = acc.id === activeAccountId;\n        let p = 0;\n        if (acc.quota && acc.quota.models && !acc.quota.is_error && acc.quota.models.length > 0) {\n            p = Math.round(acc.quota.models.reduce((s,m)=>s+m.percentage,0)/acc.quota.models.length);\n        }\n        const isErr = acc.quota && acc.quota.is_error;\n        const c = isErr ? 'var(--red)' : pctColor(p);\n        const name = acc.name || acc.email.split('@')[0];\n\n        h += `\n        <div class=\"t-node-v ${isSel ? 'active' : ''}\" onclick=\"selectNode('${acc.id}')\">\n            ${isCur ? `<div class=\"t-indicator\" style=\"background:var(--green);box-shadow:0 0 5px var(--green)\"></div>` : ''}\n            <div class=\"t-ring\" style=\"border-color:${c};color:${c}\">${isErr ? '!' : p}</div>\n            <div class=\"t-info\">\n                <div class=\"t-name\">${name}</div>\n                <div class=\"t-email\">${acc.email}</div>\n            </div>\n        </div>`;\n    });\n    grid.innerHTML = h;\n}\n\nfunction selectNode(id) {\n    activeAccountId = id;\n    vscode.setState({ activeAccountId });\n    renderAll();\n}\n\n// Actions\nfunction doSwitch(id, em) { vscode.postMessage({ command: 'switch', accountId: id, email: em }); }\nfunction doRefresh(id) { vscode.postMessage({ command: 'refresh', accountId: id }); }\nfunction doRefreshAll() { vscode.postMessage({ command: 'refreshAll' }); }\nfunction doAdd() { vscode.postMessage({ command: 'addAccount' }); }\nfunction doDelete(id, em) { vscode.postMessage({ command: 'delete', accountId: id, email: em }); }\nfunction doExportToken(id) { vscode.postMessage({ command: 'exportToken', accountId: id }); }\nfunction doBatchExport() { vscode.postMessage({ command: 'batchExportTokens' }); }\n\nfunction openTokenModal() { document.getElementById('tokenModal').classList.add('vis'); document.getElementById('tokenInput').value = ''; }\nfunction closeTokenModal() { document.getElementById('tokenModal').classList.remove('vis'); }\nfunction submitToken() { const t = document.getElementById('tokenInput').value.trim(); if(t) vscode.postMessage({ command: 'loginWithToken', token: t }); closeTokenModal(); }\n\nfunction openImportModal() { document.getElementById('importModal').classList.add('vis'); document.getElementById('importInput').value = ''; }\nfunction closeImportModal() { document.getElementById('importModal').classList.remove('vis'); }\nfunction submitImport() { const j = document.getElementById('importInput').value.trim(); if(j) vscode.postMessage({ command: 'batchImportTokens', jsonText: j }); closeImportModal(); }\n\n// UI Controls\nfunction toggleModelFilter(ev) {\n    ev.stopPropagation();\n    const dd = document.getElementById('modelFilterDD');\n    if(dd) {\n        document.querySelectorAll('.gc-dd').forEach(d => { if(d !== dd) d.classList.remove('show'); });\n        const r = ev.currentTarget.getBoundingClientRect();\n        dd.style.top = (r.bottom+2)+'px'; \n        dd.style.right = (window.innerWidth - r.right) + 'px';\n        dd.style.left = 'auto';\n        dd.classList.toggle('show');\n    }\n}\nfunction toggleHideModel(name, isChecked) {\n    if (!state.uiState) state.uiState = {};\n    let hidden = state.uiState.hiddenModels || [];\n    if (!isChecked && !hidden.includes(name)) {\n        hidden.push(name);\n    } else if (isChecked && hidden.includes(name)) {\n        hidden = hidden.filter(n => n !== name);\n    }\n    state.uiState.hiddenModels = hidden;\n    vscode.postMessage({ command: 'updateUiState', state: { hiddenModels: hidden } });\n    renderFocusNode();\n}\n\n// Groups\nfunction getAllModels() { const m=[]; accounts.forEach(a=>{if(a.quota&&a.quota.models)a.quota.models.forEach(x=>{if(!m.find(y=>y.name===x.name))m.push({name:x.name});});}); return m; }\nfunction getGroupedModels() { const s=new Set(); if(groupsConfig.groups)groupsConfig.groups.forEach(g=>g.models.forEach(m=>s.add(m))); return s; }\nfunction openGroups() { document.getElementById('groupModal').classList.add('vis'); renderGroupsList(); }\nfunction closeGroups() { document.getElementById('groupModal').classList.remove('vis'); }\nfunction autoGroup() { vscode.postMessage({ command: 'autoGroup', models: getAllModels() }); }\nfunction addGroup() { vscode.postMessage({ command: 'addGroup', groupName: 'New Route' }); }\nfunction deleteGroup(id) { vscode.postMessage({ command: 'deleteGroup', groupId: id }); }\nfunction updateGroupName(id, name) { vscode.postMessage({ command: 'updateGroupName', groupId: id, newName: name }); }\nfunction addModelToGroup(gid, mn) { vscode.postMessage({ command: 'addModelToGroup', groupId: gid, modelName: mn }); }\nfunction removeModelFromGroup(gid, mn) { vscode.postMessage({ command: 'removeModelFromGroup', groupId: gid, modelName: mn }); }\nfunction saveGroups() { vscode.postMessage({ command: 'saveGroups', config: groupsConfig }); closeGroups(); }\n\nfunction renderGroupsList() {\n    const c = document.getElementById('groupsList'), all = getAllModels(), used = getGroupedModels();\n    if (!groupsConfig.groups || groupsConfig.groups.length === 0) { c.innerHTML = '<div style=\"text-align:center;padding:20px;color:var(--text-muted);font-family:monospace\">NO GROUPS DEFINED</div>'; return; }\n    c.innerHTML = groupsConfig.groups.map(g => '<div class=\"gc\"><div class=\"gc-head\">'\n        + '<input type=\"text\" class=\"gc-input\" value=\"' + g.name + '\" onchange=\"updateGroupName(\\'' + g.id + '\\',this.value)\" onclick=\"event.stopPropagation()\">'\n        + '<button class=\"action-btn danger ghost\" style=\"padding:4px 8px;font-size:10px\" onclick=\"deleteGroup(\\'' + g.id + '\\')\">DEL</button></div>'\n        + '<div class=\"gc-tags\">' + g.models.map(mn => '<span class=\"gc-tag\">' + mn + '<span class=\"gc-rm\" onclick=\"removeModelFromGroup(\\'' + g.id + '\\',\\'' + mn + '\\')\">&times;</span></span>').join('')\n        + '<button class=\"gc-add\" onclick=\"toggleDD(\\'' + g.id + '\\',event)\">+ ADD</button>'\n        + '<div class=\"gc-dd\" id=\"dd-' + g.id + '\">' + all.filter(m => !g.models.includes(m.name)).map(m => '<div class=\"gc-dd-item' + (used.has(m.name)&&!g.models.includes(m.name)?' disabled':'') + '\" onclick=\"' + (used.has(m.name)&&!g.models.includes(m.name)?'':(\"addModelToGroup('\"+g.id+\"','\"+m.name+\"')\")) + '\">' + m.name + '</div>').join('') + '</div>'\n        + '</div></div>').join('');\n}\nfunction toggleDD(gid, ev) {\n    ev.stopPropagation();\n    const dd = document.getElementById('dd-' + gid);\n    document.querySelectorAll('.gc-dd').forEach(d => { if(d.id !== 'dd-'+gid) d.classList.remove('show'); });\n    const r = ev.currentTarget.getBoundingClientRect();\n    dd.style.top = (r.bottom+2)+'px'; dd.style.left = r.left+'px';\n    dd.classList.toggle('show');\n}\ndocument.addEventListener('click', () => { document.querySelectorAll('.gc-dd').forEach(d => d.classList.remove('show')); });\n\n// Init\nsetTimeout(() => {\n    renderAll();\n}, 100);\n";
+        const jsTemplate = "const vscode = acquireVsCodeApi();\nconst state = vscode.getState() || {};\nlet accounts = ACCOUNTS_PLACEHOLDER;\nlet groupsConfig = GROUPS_PLACEHOLDER;\nlet activeAccountId = state.activeAccountId;\n\nif (!activeAccountId || !accounts.find(a => a.id === activeAccountId)) {\n    const current = accounts.find(a => a.isCurrent);\n    activeAccountId = current ? current.id : (accounts[0] ? accounts[0].id : null);\n}\n\n// Ensure at least one account is selected\nfunction ensureActive() {\n    if (!accounts.find(a => a.id === activeAccountId) && accounts.length > 0) {\n        activeAccountId = accounts[0].id;\n    }\n}\nensureActive();\n\nwindow.addEventListener('message', event => {\n    const m = event.data;\n    if (m.command === 'groupsConfig') { groupsConfig = m.config; renderGroupsList(); }\n    else if (m.command === 'updateAccounts') {\n        accounts = m.accounts;\n        if (m.uiState) state.uiState = m.uiState;\n        ensureActive();\n        renderAll();\n    }\n});\n\nfunction updateGlobalRefresh(val) {\n    vscode.postMessage({ command: 'updateAutoRefreshInterval', interval: val });\n}\n\nfunction pctColor(p) { return p > 50 ? '#00ff66' : p > 20 ? '#d4a843' : '#ff2a2a'; }\n\nfunction renderAll() {\n    renderFocusNode();\n    renderFleetGrid();\n    renderTrafficNetwork();\n    document.getElementById('fleetCount').textContent = accounts.length;\n}\n\nfunction renderTrafficNetwork() {\n    // Determine overall traffic status for Gemini and Claude\n    const families = { 'GEMINI': false, 'CLAUDE': false };\n    \n    accounts.forEach(acc => {\n        if (acc.quota && acc.quota.is_error) {\n            const isRateLimit = acc.quota.error_status === 429;\n            const msgLower = (acc.quota.error_message || '').toLowerCase();\n            const isHighTraffic = msgLower.includes('high traffic') || msgLower.includes('rate limit') || msgLower.includes('too many requests') || msgLower.includes('resource exhausted');\n            \n            if (isRateLimit || isHighTraffic) {\n                if (acc.quota.models && acc.quota.models.length > 0) {\n                    acc.quota.models.forEach(m => {\n                        if (m.name.toLowerCase().includes('gemini')) families['GEMINI'] = true;\n                        if (m.name.toLowerCase().includes('claude')) families['CLAUDE'] = true;\n                    });\n                } else {\n                    // No model info available, mark both as throttled\n                    families['GEMINI'] = true;\n                    families['CLAUDE'] = true;\n                }\n            }\n        }\n    });\n\n    let h = '';\n    for (const [fam, throttled] of Object.entries(families)) {\n        h += `\n        <div class=\"traffic-item\">\n            <span class=\"traffic-name\">${fam} API</span>\n            ${throttled \n                ? '<span class=\"traffic-badge tb-throttle\">THROTTLED</span>' \n                : '<span class=\"traffic-badge tb-clear\">CLEAR</span>'}\n        </div>`;\n    }\n    document.getElementById('trafficStatusList').innerHTML = h;\n}\n\nfunction renderFocusNode() {\n    const panel = document.getElementById('focusNode');\n    const bdown = document.getElementById('modelsBreakdown');\n    const acc = accounts.find(a => a.id === activeAccountId);\n    if (!acc) {\n        panel.innerHTML = '<div style=\"color:var(--text-muted);text-align:center;margin-top:50px\">NO ACCOUNT SELECTED</div>';\n        bdown.innerHTML = '';\n        return;\n    }\n\n    const isErr = acc.quota && acc.quota.is_error;\n    const isRl = isErr && acc.quota.error_status === 429;\n    let totalUsed = 0, totalLimit = 0, mCount = 0, health = 0, consumed = 0;\n\n    if (acc.quota && acc.quota.models && !isErr) {\n        let sum = 0;\n        acc.quota.models.forEach(m => {\n            mCount++;\n            sum += m.percentage;\n            totalUsed += m.used || 0;\n            totalLimit += m.limit || 0;\n        });\n        health = mCount > 0 ? Math.round(sum / mCount) : 0;\n        consumed = mCount > 0 ? (100 - health) : 0;\n    }\n\n    const tier = (acc.quota && acc.quota.tier) ? acc.quota.tier : 'UNKNOWN TIER';\n    const displayName = acc.name || acc.email.split('@')[0];\n    \n    // Top Hero section\n    let h = `\n        <div class=\"hero-top\">\n            <div class=\"hero-info\">\n                <div class=\"hero-name\">${displayName}${acc.isCurrent ? '<span class=\"live-indicator\">LIVE</span>' : ''}</div>\n                <div class=\"hero-email\">${acc.email} | ${tier}</div>\n            </div>\n            <div class=\"hero-actions\">\n                ${!acc.isCurrent ? `<button class=\"action-btn\" onclick=\"doSwitch('${acc.id}','${acc.email}')\">ACTIVATE</button>` : ''}\n                <button class=\"action-btn ghost\" onclick=\"doRefresh('${acc.id}')\">REFRESH</button>\n                <button class=\"action-btn ghost\" onclick=\"doExportToken('${acc.id}')\">EXPORT</button>\n                <button class=\"action-btn danger\" onclick=\"doDelete('${acc.id}','${acc.email}')\">DELETE</button>\n            </div>\n        </div>\n        <div class=\"hero-stats\">\n            <div class=\"stat-box\">\n                <div class=\"stat-val\" style=\"color:${isErr ? 'var(--text-muted)' : pctColor(health)}\">${isErr ? 'ERR' : health + '%'}</div>\n                <div class=\"stat-lbl\">Integrity</div>\n            </div>\n            <div class=\"stat-box\">\n                <div class=\"stat-val\" style=\"color:var(--cyan)\">${mCount}</div>\n                <div class=\"stat-lbl\">Models</div>\n            </div>\n            <div class=\"stat-box\">\n                <div class=\"stat-val\" style=\"color:var(--gold)\">${consumed}%</div>\n                <div class=\"stat-lbl\">Used</div>\n            </div>\n        </div>\n    `;\n\n    panel.innerHTML = h;\n\n    // Breakdown section\n    let b = '<div class=\"card-title\" style=\"display:flex;justify-content:space-between;align-items:center\"><span>MODEL TELEMETRY</span><button class=\"action-btn ghost\" style=\"padding:2px 8px;font-size:9px\" onclick=\"openAllModels()\">ALL MODELS</button></div>';\n\n    if (mCount > 0 && !isErr) {\n        b += '<div class=\"model-bars\">';\n        \n        // Find exact core 3 models with priority matching\n        const coreModels = [];\n        const cats = {\n            pro: { name: 'Gemini 3.1 Pro', match: ['pro'], priorityKw: '3.1', found: null },\n            flash: { name: 'Gemini 3.0 Flash', match: ['flash'], priorityKw: '3.1', found: null },\n            claude: { name: 'Claude 3.5 Sonnet / Opus', match: ['claude'], priorityKw: '3.5', found: null }\n        };\n\n        acc.quota.models.forEach(m => {\n            const mName = m.name.toLowerCase();\n            for (const key in cats) {\n                if (cats[key].match.some(kw => mName.includes(kw))) {\n                    if (!cats[key].found) {\n                        cats[key].found = { ...m, displayName: cats[key].name };\n                    } else {\n                        const hasPrio = cats[key].priorityKw && mName.includes(cats[key].priorityKw);\n                        const oldHasPrio = cats[key].priorityKw && cats[key].found.name.toLowerCase().includes(cats[key].priorityKw);\n                        if (hasPrio && !oldHasPrio) {\n                            cats[key].found = { ...m, displayName: cats[key].name };\n                        }\n                    }\n                }\n            }\n        });\n\n        for (const key in cats) {\n            if (cats[key].found) { coreModels.push(cats[key].found); }\n        }\n\n        coreModels.forEach(m => {\n            const c = pctColor(m.percentage);\n            let rTime = 'Ready';\n            if (m.reset_time_raw || m.reset_time) {\n                const diff = new Date(m.reset_time_raw || m.reset_time).getTime() - Date.now();\n                if (diff > 0) rTime = Math.floor(diff/3600000)+'h '+Math.floor((diff%3600000)/60000)+'m';\n            }\n            const cons = 100 - m.percentage;\n            const usedVal = m.used || 0;\n            const limitVal = m.limit || 0;\n            const uStr = (usedVal > 0 || limitVal > 0) ? `USAGE: ${usedVal.toLocaleString()} / ${limitVal.toLocaleString()} TOKENS` : `CONSUMED: ${cons}%`;\n\n            b += `\n            <div class=\"m-bar-wrap\">\n                <div class=\"m-bar-top\"><span>${m.displayName}</span><span style=\"color:${c}\">${m.percentage}%</span></div>\n                <div class=\"m-bar-track\"><div class=\"m-bar-fill\" style=\"width:${m.percentage}%;background:${c};color:${c}\"></div></div>\n                <div class=\"m-bar-sub\"><span>${uStr}</span><span>Reset: ${rTime}</span></div>\n            </div>`;\n        });\n        b += '</div>';\n    } else if (isErr) {\n        b += `<div style=\"text-align:center;padding:20px;color:var(--red);font-family:monospace\">\n            <div style=\"font-size:14px;margin-bottom:5px\">[ HTTP ${isRl ? 429 : 500} ]</div>\n            <div>${isRl ? 'RATE LIMIT DETECTED' : 'TELEMETRY FAILURE'}</div>\n            <div style=\"font-size:10px;margin-top:5px;color:var(--text-muted)\">${acc.quota.error_message || ''}</div>\n        </div>`;\n    } else {\n        b += `<div style=\"text-align:center;padding:20px;color:var(--text-muted);font-family:monospace\">AWAITING TELEMETRY DATA...</div>`;\n    }\n    bdown.innerHTML = b;\n}\n\nfunction renderFleetGrid() {\n    const grid = document.getElementById('topology');\n    let h = '';\n    accounts.forEach(acc => {\n        const isCur = acc.isCurrent;\n        const isSel = acc.id === activeAccountId;\n        let p = 0;\n        if (acc.quota && acc.quota.models && !acc.quota.is_error && acc.quota.models.length > 0) {\n            p = Math.round(acc.quota.models.reduce((s,m)=>s+m.percentage,0)/acc.quota.models.length);\n        }\n        const isErr = acc.quota && acc.quota.is_error;\n        const c = isErr ? 'var(--red)' : pctColor(p);\n        const name = acc.name || acc.email.split('@')[0];\n\n        h += `\n        <div class=\"t-node-v ${isSel ? 'active' : ''}\" onclick=\"selectNode('${acc.id}')\">\n            ${isCur ? `<div class=\"t-indicator\" style=\"background:var(--green);box-shadow:0 0 5px var(--green)\"></div>` : ''}\n            <div class=\"t-ring\" style=\"border-color:${c};color:${c}\">${isErr ? '!' : p}</div>\n            <div class=\"t-info\">\n                <div class=\"t-name\">${name}</div>\n                <div class=\"t-email\">${acc.email}</div>\n            </div>\n        </div>`;\n    });\n    grid.innerHTML = h;\n}\n\nfunction selectNode(id) {\n    activeAccountId = id;\n    vscode.setState({ activeAccountId });\n    renderAll();\n}\n\n// Actions\nfunction doSwitch(id, em) { vscode.postMessage({ command: 'switch', accountId: id, email: em }); }\nfunction doRefresh(id, silent=false) { vscode.postMessage({ command: 'refresh', accountId: id, silent }); }\nfunction doRefreshAll() { vscode.postMessage({ command: 'refreshAll' }); }\nfunction doAdd() { vscode.postMessage({ command: 'addAccount' }); }\nfunction doDelete(id, em) { vscode.postMessage({ command: 'delete', accountId: id, email: em }); }\nfunction doExportToken(id) { vscode.postMessage({ command: 'exportToken', accountId: id }); }\nfunction doBatchExport() { vscode.postMessage({ command: 'batchExportTokens' }); }\nfunction doSafeClean() { vscode.postMessage({ command: 'safeClean' }); }\n\nfunction openTokenModal() { document.getElementById('tokenModal').classList.add('vis'); document.getElementById('tokenInput').value = ''; }\nfunction closeTokenModal() { document.getElementById('tokenModal').classList.remove('vis'); }\nfunction submitToken() { const t = document.getElementById('tokenInput').value.trim(); if(t) vscode.postMessage({ command: 'loginWithToken', token: t }); closeTokenModal(); }\n\nfunction openImportModal() { document.getElementById('importModal').classList.add('vis'); document.getElementById('importInput').value = ''; }\nfunction closeImportModal() { document.getElementById('importModal').classList.remove('vis'); }\nfunction submitImport() { const j = document.getElementById('importInput').value.trim(); if(j) vscode.postMessage({ command: 'batchImportTokens', jsonText: j }); closeImportModal(); }\n\n// UI Controls\n// UI Controls\nfunction openAllModels() {\n    const acc = accounts.find(a => a.id === activeAccountId);\n    if (!acc || !acc.quota || !acc.quota.models) return;\n    \n    let html = '';\n    acc.quota.models.forEach(m => {\n        const c = pctColor(m.percentage);\n        let rTime = 'Ready';\n        if (m.reset_time_raw || m.reset_time) {\n            const diff = new Date(m.reset_time_raw || m.reset_time).getTime() - Date.now();\n            if (diff > 0) rTime = Math.floor(diff/3600000)+'h '+Math.floor((diff%3600000)/60000)+'m';\n        }\n        const cons = 100 - m.percentage;\n        const usedVal = m.used || 0;\n        const limitVal = m.limit || 0;\n        const uStr = (usedVal > 0 || limitVal > 0) ? `${usedVal.toLocaleString()} / ${limitVal.toLocaleString()} tokens` : `${cons}% used`;\n\n        html += `\n        <div class=\"m-bar-wrap\" style=\"margin-bottom:12px; border-bottom:1px solid rgba(255,255,255,0.1); padding-bottom:8px;\">\n            <div class=\"m-bar-top\"><span>${m.name}</span><span style=\"color:${c}\">${m.percentage}%</span></div>\n            <div class=\"m-bar-track\"><div class=\"m-bar-fill\" style=\"width:${m.percentage}%;background:${c};color:${c}\"></div></div>\n            <div class=\"m-bar-sub\"><span>${uStr}</span><span>Reset: ${rTime}</span></div>\n        </div>`;\n    });\n    \n    document.getElementById('allModelsList').innerHTML = html;\n    document.getElementById('allModelsModal').classList.add('vis');\n}\nfunction closeAllModels() {\n    document.getElementById('allModelsModal').classList.remove('vis');\n}\n\n// Groups\nfunction getAllModels() { const m=[]; accounts.forEach(a=>{if(a.quota&&a.quota.models)a.quota.models.forEach(x=>{if(!m.find(y=>y.name===x.name))m.push({name:x.name});});}); return m; }\nfunction getGroupedModels() { const s=new Set(); if(groupsConfig.groups)groupsConfig.groups.forEach(g=>g.models.forEach(m=>s.add(m))); return s; }\nfunction openGroups() { document.getElementById('groupModal').classList.add('vis'); renderGroupsList(); }\nfunction closeGroups() { document.getElementById('groupModal').classList.remove('vis'); }\nfunction autoGroup() { vscode.postMessage({ command: 'autoGroup', models: getAllModels() }); }\nfunction addGroup() { vscode.postMessage({ command: 'addGroup', groupName: 'New Route' }); }\nfunction deleteGroup(id) { vscode.postMessage({ command: 'deleteGroup', groupId: id }); }\nfunction updateGroupName(id, name) { vscode.postMessage({ command: 'updateGroupName', groupId: id, newName: name }); }\nfunction addModelToGroup(gid, mn) { vscode.postMessage({ command: 'addModelToGroup', groupId: gid, modelName: mn }); }\nfunction removeModelFromGroup(gid, mn) { vscode.postMessage({ command: 'removeModelFromGroup', groupId: gid, modelName: mn }); }\nfunction saveGroups() { vscode.postMessage({ command: 'saveGroups', config: groupsConfig }); closeGroups(); }\n\nfunction renderGroupsList() {\n    const c = document.getElementById('groupsList'), all = getAllModels(), used = getGroupedModels();\n    if (!groupsConfig.groups || groupsConfig.groups.length === 0) { c.innerHTML = '<div style=\"text-align:center;padding:20px;color:var(--text-muted);font-family:monospace\">NO GROUPS DEFINED</div>'; return; }\n    c.innerHTML = groupsConfig.groups.map(g => '<div class=\"gc\"><div class=\"gc-head\">'\n        + '<input type=\"text\" class=\"gc-input\" value=\"' + g.name + '\" onchange=\"updateGroupName(\\'' + g.id + '\\',this.value)\" onclick=\"event.stopPropagation()\">'\n        + '<button class=\"action-btn danger ghost\" style=\"padding:4px 8px;font-size:10px\" onclick=\"deleteGroup(\\'' + g.id + '\\')\">DEL</button></div>'\n        + '<div class=\"gc-tags\">' + g.models.map(mn => '<span class=\"gc-tag\">' + mn + '<span class=\"gc-rm\" onclick=\"removeModelFromGroup(\\'' + g.id + '\\',\\'' + mn + '\\')\">&times;</span></span>').join('')\n        + '<button class=\"gc-add\" onclick=\"toggleDD(\\'' + g.id + '\\',event)\">+ ADD</button>'\n        + '<div class=\"gc-dd\" id=\"dd-' + g.id + '\">' + all.filter(m => !g.models.includes(m.name)).map(m => '<div class=\"gc-dd-item' + (used.has(m.name)&&!g.models.includes(m.name)?' disabled':'') + '\" onclick=\"' + (used.has(m.name)&&!g.models.includes(m.name)?'':(\"addModelToGroup('\"+g.id+\"','\"+m.name+\"')\")) + '\">' + m.name + '</div>').join('') + '</div>'\n        + '</div></div>').join('');\n}\nfunction toggleDD(gid, ev) {\n    ev.stopPropagation();\n    const dd = document.getElementById('dd-' + gid);\n    document.querySelectorAll('.gc-dd').forEach(d => { if(d.id !== 'dd-'+gid) d.classList.remove('show'); });\n    const r = ev.currentTarget.getBoundingClientRect();\n    dd.style.top = (r.bottom+2)+'px'; dd.style.left = r.left+'px';\n    dd.classList.toggle('show');\n}\ndocument.addEventListener('click', () => { document.querySelectorAll('.gc-dd').forEach(d => d.classList.remove('show')); });\n\n// Init\nsetTimeout(() => {\n    renderAll();\n    const sel = document.getElementById('autoRefreshGlobal');\n    if (sel) {\n        sel.value = 'INTERVAL_PLACEHOLDER';\n    }\n}, 100);\n";
         const jsCode = jsTemplate
             .replace('TRANSLATIONS_PLACEHOLDER', translationsJson)
             .replace('ACCOUNTS_PLACEHOLDER', accountsJson)
-            .replace('GROUPS_PLACEHOLDER', groupsJson);
+            .replace('GROUPS_PLACEHOLDER', groupsJson)
+            .replace('INTERVAL_PLACEHOLDER', autoRefreshInterval.toString());
 
         return `<!DOCTYPE html>
 <html lang="en">
@@ -382,13 +462,13 @@ body{font-family:'Inter',sans-serif;background:#05070a;color:#cbd5e1;overflow:hi
 .stat-val { font-family: var(--font-cyber); font-size: 24px; font-weight: 700; margin-bottom: 4px; }
 .stat-lbl { font-size: 9px; color: var(--text-muted); text-transform: uppercase; letter-spacing: 1px; }
 
-.model-bars { display: flex; flex-direction: column; gap: 10px; overflow-y: auto; max-height: 300px; padding-right: 8px; }
-.m-bar-wrap { display: flex; flex-direction: column; gap: 3px; }
-.m-bar-top { display: flex; justify-content: space-between; font-size: 11px; font-weight: 600; color: #fff; }
-.m-bar-top span:last-child { font-family: var(--font-cyber); font-size: 11px; }
-.m-bar-track { height: 5px; background: rgba(255,255,255,0.05); border-radius: 3px; overflow: hidden; }
-.m-bar-fill { height: 100%; border-radius: 3px; box-shadow: 0 0 8px currentColor; transition: width 0.4s ease; }
-.m-bar-sub { display: flex; justify-content: space-between; font-size: 9px; color: var(--text-muted); font-family: monospace; }
+.model-bars { display: flex; flex-direction: column; gap: 15px; overflow: hidden; justify-content: space-evenly; flex-grow: 1; margin-top: 20px; margin-bottom: 20px; }
+.m-bar-wrap { display: flex; flex-direction: column; gap: 6px; }
+.m-bar-top { display: flex; justify-content: space-between; font-size: 15px; font-weight: 800; color: #fff; letter-spacing: 0.5px; }
+.m-bar-top span:last-child { font-family: var(--font-cyber); font-size: 15px; }
+.m-bar-track { height: 14px; background: rgba(255,255,255,0.05); border-radius: 7px; overflow: hidden; }
+.m-bar-fill { height: 100%; border-radius: 7px; box-shadow: 0 0 16px currentColor; transition: width 0.4s ease; }
+.m-bar-sub { display: flex; justify-content: space-between; font-size: 11px; color: var(--text-muted); font-family: monospace; letter-spacing: 0.5px; text-transform: uppercase; }
 
 /* ── FLEET TOPOLOGY (VERTICAL) ── */
 .topology-vertical { display: flex; flex-direction: column; gap: 10px; flex: 1; overflow-y: auto; padding: 2px; }
@@ -461,13 +541,14 @@ body{font-family:'Inter',sans-serif;background:#05070a;color:#cbd5e1;overflow:hi
 <body>
 <div class="cockpit">
     <div class="nav">
-        <div class="nav-brand"><div class="logo-shield"></div>ANBUTECH MISSION CONTROL</div>
+        <div class="nav-brand"><div class="logo-shield"></div>ANTIGRAVITY MISSION CONTROL</div>
         <div class="nav-actions">
             <button class="nav-btn" onclick="doAdd()"><span class="icon">+</span> Add Account</button>
             <button class="nav-btn" onclick="openTokenModal()"><span class="icon">🔑</span> Token</button>
             <button class="nav-btn" onclick="doBatchExport()"><span class="icon">↗</span> Export</button>
             <button class="nav-btn" onclick="openImportModal()"><span class="icon">↙</span> Import</button>
             <button class="nav-btn" onclick="openGroups()"><span class="icon">⚙</span> Groups</button>
+            <button class="nav-btn" onclick="doSafeClean()" title="Delete .antigravity/ and .jetski/ folders in project root to reset corrupted agent sessions"><span class="icon">🧹</span> Safe Clean</button>
         </div>
     </div>
 
@@ -497,7 +578,16 @@ body{font-family:'Inter',sans-serif;background:#05070a;color:#cbd5e1;overflow:hi
             <div class="bento-card fleet-grid" style="flex:1;">
                 <div class="card-title" style="display:flex;justify-content:space-between;align-items:center">
                     <span>ACCOUNT FLEET (<span id="fleetCount">0</span>)</span>
-                    <button class="action-btn ghost" style="padding:4px 10px;font-size:10px" onclick="doRefreshAll()">⟳ REFRESH ALL</button>
+                    <div style="display:flex;gap:5px;">
+                        <select id="autoRefreshGlobal" class="action-btn ghost" style="padding:2px;font-size:10px;background:rgba(0,0,0,0.5);border:1px solid rgba(255,255,255,0.2);outline:none;color:#fff;" onchange="updateGlobalRefresh(this.value)">
+                            <option value="0">Auto: OFF</option>
+                            <option value="1">1 Min</option>
+                            <option value="5">5 Min</option>
+                            <option value="10">10 Min</option>
+                            <option value="15">15 Min</option>
+                        </select>
+                        <button class="action-btn ghost" style="padding:4px 10px;font-size:10px" onclick="doRefreshAll()">⟳ REFRESH ALL</button>
+                    </div>
                 </div>
                 <div class="topology-vertical" id="topology" style="flex:1;">
                     <!-- Nodes populated via JS -->
@@ -543,6 +633,15 @@ body{font-family:'Inter',sans-serif;background:#05070a;color:#cbd5e1;overflow:hi
     <div class="modal-f"><button class="action-btn ghost" onclick="closeGroups()">CANCEL</button><button class="action-btn" onclick="saveGroups()">SAVE</button></div>
   </div>
 </div>
+
+<div class="overlay" id="allModelsModal">
+  <div class="modal" style="max-width:800px; max-height:80vh; overflow:hidden; display:flex; flex-direction:column;">
+    <div class="modal-h"><h2>ALL MODEL TELEMETRY</h2><button class="modal-x" onclick="closeAllModels()">&times;</button></div>
+    <div class="modal-b" id="allModelsList" style="flex:1; overflow-y:auto; padding-right:10px;"></div>
+  </div>
+</div>
+
+<div id="globalDDs"></div>
 
 <script>${jsCode}</script>
 </body>

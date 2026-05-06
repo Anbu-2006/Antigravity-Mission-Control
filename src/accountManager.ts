@@ -414,14 +414,18 @@ export class AccountManager {
         return { is_forbidden: false, models, tier };
     }
 
-    // --- 配额缓存层 ---
+    // --- 配额缓存层 (Anti-Tokenware: 60s min TTL + Exponential Backoff) ---
     private static _quotaCache = new Map<string, { data: any; timestamp: number }>();
-    private static readonly _CACHE_TTL = 15 * 1000; // 15 秒 TTL
+    private static readonly _CACHE_TTL = 60 * 1000; // 60 second minimum TTL to prevent WAF flagging
+    private static _backoffState = new Map<string, { failures: number; nextRetryAt: number }>();
 
     /**
      * 带缓存的配额获取。
-     * 短时间内（TTL 内）对同一 accessToken 的多次调用直接复用缓存，
-     * 避免 StatusBar / Dashboard / TreeView 各自独立发起重复请求。
+     * Implements exponential backoff with jitter on failures to prevent
+     * background refreshes from being flagged as "non-Antigravity" tool usage.
+     * 
+     * Backoff schedule: 60s → 120s → 240s → 480s (max)
+     * Jitter: ±15% randomization to prevent thundering herd
      */
     static async fetchQuotaCached(accessToken: string, projectId: string | null = null) {
         const cacheKey = accessToken.substring(0, 32);
@@ -431,11 +435,45 @@ export class AccountManager {
             return cached.data;
         }
 
-        const data = await this.fetchQuota(accessToken, projectId);
-        if (!data.is_error) {
-            this._quotaCache.set(cacheKey, { data, timestamp: Date.now() });
+        // Check backoff state: skip if we're in a cooldown period after failures
+        const backoff = this._backoffState.get(cacheKey);
+        if (backoff && Date.now() < backoff.nextRetryAt) {
+            // Still in backoff, return stale cache if available, else return error
+            if (cached) {
+                return cached.data;
+            }
+            return { is_error: true, error_message: 'Rate-limited (backoff active)', models: [], tier: null };
         }
-        return data;
+
+        try {
+            const data = await this.fetchQuota(accessToken, projectId);
+            if (!data.is_error) {
+                this._quotaCache.set(cacheKey, { data, timestamp: Date.now() });
+                // Reset backoff on success
+                this._backoffState.delete(cacheKey);
+            } else {
+                // Increment backoff on error
+                const currentFailures = (backoff?.failures || 0) + 1;
+                const baseDelay = Math.min(60000 * Math.pow(2, currentFailures - 1), 480000); // max 8 min
+                const jitter = baseDelay * (0.85 + Math.random() * 0.3); // ±15% jitter
+                this._backoffState.set(cacheKey, {
+                    failures: currentFailures,
+                    nextRetryAt: Date.now() + jitter
+                });
+                console.warn(`[Cockpit] Quota fetch error, backoff #${currentFailures}: next retry in ${Math.round(jitter/1000)}s`);
+            }
+            return data;
+        } catch (e) {
+            // Network/auth failure: apply backoff
+            const currentFailures = (backoff?.failures || 0) + 1;
+            const baseDelay = Math.min(60000 * Math.pow(2, currentFailures - 1), 480000);
+            const jitter = baseDelay * (0.85 + Math.random() * 0.3);
+            this._backoffState.set(cacheKey, {
+                failures: currentFailures,
+                nextRetryAt: Date.now() + jitter
+            });
+            throw e;
+        }
     }
 
     /**
@@ -457,6 +495,11 @@ export class AccountManager {
         } else {
             this._quotaCache.clear();
         }
+    }
+
+    /** 清除退避状态。用于手动 "Refresh All" 时绕过指数退避冷却 */
+    static clearBackoffState(): void {
+        this._backoffState.clear();
     }
 
     static deleteAccount(accountId: string) {

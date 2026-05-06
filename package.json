@@ -1,13 +1,13 @@
 {
   "name": "antigravity-mission-control",
-  "displayName": "Anbutech Mission Control",
+  "displayName": "Antigravity Mission Control",
   "description": "%extension.description%",
-  "version": "1.1.7",
+  "version": "1.3.0",
   "publisher": "anbutech",
   "icon": "resources/icon.png",
   "repository": {
     "type": "git",
-    "url": "https://github.com/at2008/anbutech-mission-control.git"
+    "url": "https://github.com/at2008/antigravity-mission-control.git"
   },
   "engines": {
     "vscode": "^1.80.0"
@@ -22,77 +22,81 @@
   "contributes": {
     "commands": [
       {
-        "command": "anbutech-mission-control.refreshAccounts",
+        "command": "antigravity-mission-control.refreshAccounts",
         "title": "%command.refreshAccounts%",
         "icon": "$(refresh)"
       },
       {
-        "command": "anbutech-mission-control.switchAccount",
+        "command": "antigravity-mission-control.switchAccount",
         "title": "%command.switchAccount%"
       },
       {
-        "command": "anbutech-mission-control.refreshAccount",
+        "command": "antigravity-mission-control.refreshAccount",
         "title": "%command.refreshAccount%"
       },
       {
-        "command": "anbutech-mission-control.refreshAllAccounts",
+        "command": "antigravity-mission-control.refreshAllAccounts",
         "title": "%command.refreshAllAccounts%"
       },
       {
-        "command": "anbutech-mission-control.openDashboard",
+        "command": "antigravity-mission-control.openDashboard",
         "title": "%command.openDashboard%"
       },
       {
-        "command": "anbutech-mission-control.addAccount",
+        "command": "antigravity-mission-control.addAccount",
         "title": "%command.addAccount%",
         "icon": "$(add)"
       },
       {
-        "command": "anbutech-mission-control.openSwitchLogs",
+        "command": "antigravity-mission-control.openSwitchLogs",
         "title": "%command.openSwitchLogs%"
       },
       {
-        "command": "anbutech-mission-control.diagnoseEnvironment",
+        "command": "antigravity-mission-control.diagnoseEnvironment",
         "title": "%command.diagnoseEnvironment%"
       },
       {
-        "command": "anbutech-mission-control.loginWithToken",
-        "title": "Anbutech: Login with Refresh Token",
+        "command": "antigravity-mission-control.checkTerminalHealth",
+        "title": "Antigravity: Check Terminal Health"
+      },
+      {
+        "command": "antigravity-mission-control.loginWithToken",
+        "title": "Antigravity: Login with Refresh Token",
         "icon": "$(key)"
       },
       {
-        "command": "anbutech-mission-control.exportToken",
-        "title": "Anbutech: Export Refresh Token",
+        "command": "antigravity-mission-control.exportToken",
+        "title": "Antigravity: Export Refresh Token",
         "icon": "$(export)"
       },
       {
-        "command": "anbutech-mission-control.batchExportTokens",
-        "title": "Anbutech: Batch Export All Tokens",
+        "command": "antigravity-mission-control.batchExportTokens",
+        "title": "Antigravity: Batch Export All Tokens",
         "icon": "$(export)"
       },
       {
-        "command": "anbutech-mission-control.batchImportTokens",
-        "title": "Anbutech: Batch Import Tokens",
+        "command": "antigravity-mission-control.batchImportTokens",
+        "title": "Antigravity: Batch Import Tokens",
         "icon": "$(import)"
       },
       {
-        "command": "anbutech-mission-control.quickSwitch",
-        "title": "Anbutech: Quick Switch to Healthiest Account",
+        "command": "antigravity-mission-control.quickSwitch",
+        "title": "Antigravity: Quick Switch to Healthiest Account",
         "icon": "$(zap)"
       }
     ],
     "keybindings": [
       {
-        "command": "anbutech-mission-control.quickSwitch",
+        "command": "antigravity-mission-control.quickSwitch",
         "key": "ctrl+shift+a",
         "mac": "cmd+shift+a"
       }
     ],
     "configuration": {
-      "title": "Anbutech Mission Control",
+      "title": "Antigravity Mission Control",
       "properties": {
 
-        "anbutech-mission-control.switchMode": {
+        "antigravity-mission-control.switchMode": {
           "type": "string",
           "enum": [
             "safe",
@@ -101,12 +105,12 @@
           "default": "advanced",
           "description": "%config.switchMode.description%"
         },
-        "anbutech-mission-control.databasePathOverride": {
+        "antigravity-mission-control.databasePathOverride": {
           "type": "string",
           "default": "",
           "description": "%config.databasePathOverride.description%"
         },
-        "anbutech-mission-control.antigravityExecutablePath": {
+        "antigravity-mission-control.antigravityExecutablePath": {
           "type": "object",
           "properties": {
             "win32": {
@@ -126,12 +130,18 @@
             }
           }
         },
-        "anbutech-mission-control.processWaitSeconds": {
+        "antigravity-mission-control.processWaitSeconds": {
           "type": "integer",
           "default": 10,
           "minimum": 5,
           "maximum": 60,
           "description": "%config.processWaitSeconds.description%"
+        },
+        "antigravity-mission-control.autoRefreshInterval": {
+          "type": "integer",
+          "default": 5,
+          "enum": [0, 1, 5, 10, 15],
+          "description": "Auto-refresh interval in minutes (0 to disable)."
         }
       }
     }

@@ -75,7 +75,7 @@ function copyDirRecursive(src: string, dest: string): void {
 }
 
 /**
- * 获取 Anbutech IDE 的全局状态数据库路径
+ * 获取 Antigravity IDE 的全局状态数据库路径
  * @param overridePath 配置中的覆盖路径（可选）
  * @returns 数据库文件路径
  */

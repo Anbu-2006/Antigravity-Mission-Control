@@ -1,13 +1,21 @@
 import { exec, spawn } from 'child_process';
 import { promisify } from 'util';
+import * as os from 'os';
 
 const execAsync = promisify(exec);
 
 export class ProcessManager {
     static async isAntigravityRunning(): Promise<boolean> {
         try {
-            const { stdout } = await execAsync('tasklist /FI "IMAGENAME eq antigravity.exe" /NH');
-            return stdout.toLowerCase().includes('antigravity.exe');
+            const platform = os.platform();
+            if (platform === 'win32') {
+                const { stdout } = await execAsync('tasklist /FI "IMAGENAME eq antigravity.exe" /NH');
+                return stdout.toLowerCase().includes('antigravity.exe');
+            } else {
+                // macOS and Linux
+                const { stdout } = await execAsync('ps -A -o comm=');
+                return stdout.toLowerCase().includes('antigravity');
+            }
         } catch (e) {
             return false;
         }
@@ -19,8 +27,14 @@ export class ProcessManager {
         }
 
         try {
-            console.log('Sending taskkill...');
-            await execAsync('taskkill /F /IM antigravity.exe');
+            console.log('Sending kill signal...');
+            const platform = os.platform();
+            if (platform === 'win32') {
+                await execAsync('taskkill /F /IM antigravity.exe');
+            } else {
+                // macOS and Linux
+                await execAsync('pkill -f antigravity || killall antigravity || true');
+            }
             
             // Wait for process to disappear
             for (let i = 0; i < 20; i++) { // Max 10 seconds
@@ -41,14 +55,31 @@ export class ProcessManager {
 
     static async startAntigravity() {
         try {
-            console.log('Starting Antigravity via PowerShell Start-Process...');
-            // Use PowerShell Start-Process for reliable detached execution
-            const child = spawn('powershell', ['-Command', "Start-Process 'antigravity://'"], {
-                detached: true,
-                stdio: 'ignore',
-                windowsHide: true
-            });
-            child.unref();
+            console.log('Starting Antigravity...');
+            const platform = os.platform();
+            if (platform === 'win32') {
+                // Use PowerShell Start-Process for reliable detached execution
+                const child = spawn('powershell', ['-Command', "Start-Process 'antigravity://'"], {
+                    detached: true,
+                    stdio: 'ignore',
+                    windowsHide: true
+                });
+                child.unref();
+            } else if (platform === 'darwin') {
+                // macOS
+                const child = spawn('open', ['antigravity://'], {
+                    detached: true,
+                    stdio: 'ignore'
+                });
+                child.unref();
+            } else {
+                // Linux
+                const child = spawn('xdg-open', ['antigravity://'], {
+                    detached: true,
+                    stdio: 'ignore'
+                });
+                child.unref();
+            }
         } catch (e) {
             console.error('Failed to start Antigravity', e);
         }

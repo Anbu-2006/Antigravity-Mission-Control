@@ -170,7 +170,7 @@ export class SwitcherProxy {
      * @param refreshToken OAuth refresh token
      * @param expiry Token 过期时间戳（秒）
      * @param dbPathOverride 数据库路径覆盖（可选）
-     * @param exePathOverride Anbutech 可执行文件路径覆盖（可选，按平台）
+     * @param exePathOverride Antigravity 可执行文件路径覆盖（可选，按平台）
      * @param processWaitSeconds 进程关闭/启动等待时间（秒，默认10秒，低配机器建议20-30秒）
      */
     static async executeExternalSwitch(
@@ -276,8 +276,8 @@ function sleep(ms) {
     return new Promise(resolve => setTimeout(resolve, ms));
 }
 
-// === 检测 Anbutech 进程 ===
-function isAnbutechRunning() {
+// === 检测 Antigravity 进程 ===
+function isAntigravityRunning() {
     try {
         if (PLATFORM === 'win32') {
             const result = execSync('tasklist /FI "IMAGENAME eq Antigravity.exe" /NH 2>nul', { encoding: 'utf-8', shell: true, windowsHide: true });
@@ -295,9 +295,9 @@ function isAnbutechRunning() {
     }
 }
 
-// === 强制关闭所有 Anbutech 进程 ===
-function killAllAnbutech() {
-    log('正在强制关闭所有 Anbutech 进程...');
+// === 强制关闭所有 Antigravity 进程 ===
+function killAllAntigravity() {
+    log('正在强制关闭所有 Antigravity 进程...');
     try {
         if (PLATFORM === 'win32') {
             // Windows: 使用 taskkill 强制关闭所有 Antigravity.exe 进程
@@ -328,14 +328,56 @@ function killAllAnbutech() {
     log('关闭进程命令已执行');
 }
 
-// === 等待进程完全退出 ===
+// === 等待进程完全退出 (Exclusive Lock Polling) ===
 async function waitForProcessExit(maxWaitSec = 30) {
-    log('等待 Anbutech IDE 进程退出...');
-    // 简化：直接等待固定时间，避免 execSync 在 VBScript 进程中卡住
-    log('等待 ' + maxWaitSec + ' 秒让进程完全退出...');
-    await sleep(maxWaitSec * 1000);
-    log('等待完成，假设 IDE 进程已退出');
-    return true;
+    log('等待 Antigravity IDE 进程退出并获取数据库独占锁...');
+    const start = Date.now();
+    let lockAcquired = false;
+    let attempts = 0;
+    
+    while (Date.now() - start < maxWaitSec * 1000) {
+        attempts++;
+        try {
+            if (fs.existsSync(DB_PATH)) {
+                // Attempt exclusive r+ open to prove no other process holds a lock
+                const fd = fs.openSync(DB_PATH, 'r+');
+                fs.closeSync(fd);
+                
+                // Double-check: also verify WAL/SHM journal files are released
+                const walPath = DB_PATH + '-wal';
+                const shmPath = DB_PATH + '-shm';
+                if (fs.existsSync(walPath)) {
+                    try { const wfd = fs.openSync(walPath, 'r+'); fs.closeSync(wfd); } catch(e) {
+                        log('WAL file still locked, retry...');
+                        await sleep(500);
+                        continue;
+                    }
+                }
+                if (fs.existsSync(shmPath)) {
+                    try { const sfd = fs.openSync(shmPath, 'r+'); fs.closeSync(sfd); } catch(e) {
+                        log('SHM file still locked, retry...');
+                        await sleep(500);
+                        continue;
+                    }
+                }
+            }
+            lockAcquired = true;
+            break;
+        } catch (e) {
+            // EBUSY (Windows) or EPERM means Chromium/SQLite engine still holds the lock
+            if (attempts % 10 === 0) {
+                log('Lock poll attempt #' + attempts + ': DB still locked (' + Math.round((Date.now()-start)/1000) + 's elapsed)');
+            }
+        }
+        await sleep(500);
+    }
+
+    if (!lockAcquired) {
+        log('CRITICAL: Lock acquisition timed out after ' + maxWaitSec + 's and ' + attempts + ' attempts. Aborting launch to prevent database corruption.');
+    } else {
+        log('Exclusive lock acquired after ' + attempts + ' attempts (' + Math.round((Date.now()-start)/1000) + 's). Database is safe to modify.');
+    }
+    return lockAcquired;
 }
 // === Protobuf 编解码 ===
 function encodeVarint(v) {
@@ -517,6 +559,51 @@ async function injectToken() {
         log('数据库写回磁盘成功');
         
         db.close();
+
+        // 5. Nuclear Session Cleaning: purge ALL Chromium persistence layers
+        //    This prevents Ghost Sessions where stale tokens in localStorage/IndexedDB
+        //    cause the backend to route requests through dead sessions (404/503).
+        try {
+            // Navigate from state.vscdb → User/globalStorage → User → Antigravity root
+            const userDataRoot = path.join(DB_PATH, '..', '..', '..');
+            const nukeDirs = [
+                'Local Storage',      // Chromium localStorage (LevelDB)
+                'IndexedDB',          // IndexedDB persistence
+                'auth-tokens',        // Electron auth token store
+                'Cache',              // HTTP/disk cache
+                'GPUCache',           // GPU shader cache (can hold stale process locks)
+            ];
+            let cleaned = 0;
+            nukeDirs.forEach(dir => {
+                const fullPath = path.join(userDataRoot, dir);
+                if (fs.existsSync(fullPath)) {
+                    try {
+                        fs.rmSync(fullPath, { recursive: true, force: true });
+                        log('NUKED: ' + dir);
+                        cleaned++;
+                    } catch (dirErr) {
+                        log('Failed to nuke ' + dir + ' (non-fatal): ' + dirErr.message);
+                        // OS-Level Edge Case: Force Kill rogue processes holding the lock
+                        if (PLATFORM === 'win32' && (dirErr.code === 'EPERM' || dirErr.code === 'EBUSY')) {
+                            log('OS Edge Case: Access Denied. Attempting targeted Force Kill of hung Chromium sub-processes...');
+                            try {
+                                require('child_process').execSync('taskkill /F /IM antigravity.exe /T', { stdio: 'ignore' });
+                                // Retry one more time
+                                fs.rmSync(fullPath, { recursive: true, force: true });
+                                log('Successfully force-nuked ' + dir + ' after taskkill');
+                                cleaned++;
+                            } catch (killErr) {
+                                log('Force Kill / Nuke fallback failed for ' + dir);
+                            }
+                        }
+                    }
+                }
+            });
+            log('Nuclear cleanup complete: ' + cleaned + '/' + nukeDirs.length + ' directories purged');
+        } catch (e) {
+            log('Nuclear cleanup error (non-fatal): ' + e.message);
+        }
+
         return true;
     } catch (e) {
         log('注入流程异常: ' + e.message);
@@ -526,7 +613,7 @@ async function injectToken() {
 
 // === 启动 IDE ===
 function startIDE() {
-    log('正在启动 Anbutech IDE...');
+    log('正在启动 Antigravity IDE...');
     
     try {
         if (PLATFORM === 'win32') {
@@ -578,8 +665,8 @@ function startIDE() {
                         // 忽略等待异常
                     }
                     
-                    // 检测 Anbutech 进程是否已启动
-                    if (isAnbutechRunning()) {
+                    // 检测 Antigravity 进程是否已启动
+                    if (isAntigravityRunning()) {
                         log('方法1 已成功启动 IDE (进程检测到 Antigravity.exe 正在运行)，跳过方法2');
                         return true;
                     }
@@ -592,7 +679,7 @@ function startIDE() {
             // 方法2: 如果知道 exe 路径，直接拉起进程
             if (exePath && fs.existsSync(exePath)) {
                 // 再次检测，防止方法1延迟启动导致重复
-                if (isAnbutechRunning()) {
+                if (isAntigravityRunning()) {
                     log('方法2 跳过: 检测到 Antigravity 进程已在运行');
                     return true;
                 }
@@ -607,6 +694,12 @@ function startIDE() {
                         delete cleanEnv[key];
                     }
                 });
+
+                // OS-Level Edge Case: Chromium 'Home Directory' Terminal Blindness
+                if (!cleanEnv.HOME && cleanEnv.USERPROFILE) {
+                    cleanEnv.HOME = cleanEnv.USERPROFILE;
+                    log('OS Edge Case: Set HOME to USERPROFILE to prevent Terminal Blindness');
+                }
 
                 const child = require('child_process').spawn(exePath, [], {
                     detached: true,
@@ -680,7 +773,7 @@ function startIDE() {
 // === 主流程 ===
 async function main() {
     log('========================================');
-    log('Anbutech Mission Control 账号切换代理启动');
+    log('Antigravity Mission Control 账号切换代理启动');
     log('平台: ' + PLATFORM);
     log('数据库: ' + DB_PATH);
     log('========================================');
@@ -690,12 +783,29 @@ async function main() {
     log('等待 ' + initialWait + ' 秒让主进程发送退出命令...');
     await sleep(initialWait * 1000);
     
-    // 2. 主动强制关闭所有 Anbutech 进程
-    killAllAnbutech();
+    // 2. 主动强制关闭所有 Antigravity 进程
+    killAllAntigravity();
     
-    // 3. 等待 IDE 进程完全退出
-    const exitWait = Math.max(5, Math.floor(PROCESS_WAIT_SECONDS / 2));
-    await waitForProcessExit(exitWait);
+    // 3. 等待 IDE 进程完全退出 (minimum 15s for HDD/antivirus systems)
+    const exitWait = Math.max(15, PROCESS_WAIT_SECONDS);
+    const lockAcquired = await waitForProcessExit(exitWait);
+    if (!lockAcquired) {
+        log('SAFE ABORT: Displaying critical lock error modal to user.');
+        try {
+            if (PLATFORM === 'win32') {
+                require('child_process').execSync('powershell -WindowStyle Hidden -Command "Add-Type -AssemblyName System.Windows.Forms; [System.Windows.Forms.MessageBox]::Show(\\'Critical Lock Error: Antigravity is still being held by a background process. Please open Task Manager, kill all Antigravity.exe processes, and try again.\\', \\'Antigravity Mission Control\\', \\'OK\\', \\'Error\\')"');
+            } else if (PLATFORM === 'darwin') {
+                require('child_process').execSync("osascript -e 'display dialog \\\"Critical Lock Error: Antigravity is still being held by a background process. Please open Activity Monitor, force quit Antigravity, and try again.\\\" buttons {\\\"OK\\\"} default button \\\"OK\\\" with icon stop with title \\\"Antigravity Mission Control\\\"'");
+            } else {
+                try {
+                    require('child_process').execSync('zenity --error --title="Antigravity Mission Control" --text="Critical Lock Error: Antigravity is still being held by a background process. Please kill all Antigravity processes and try again."');
+                } catch(e) {}
+            }
+        } catch (modalErr) {
+            log('Failed to show Safe Abort modal: ' + modalErr.message);
+        }
+        process.exit(1);
+    }
     
     // 4. 额外等待确保文件锁释放
     const releaseWait = Math.max(3, Math.floor(PROCESS_WAIT_SECONDS / 3));
@@ -717,7 +827,7 @@ async function main() {
     if (started) {
         log('IDE 启动指令已发送');
     } else {
-        log('IDE 启动失败，请手动打开 Anbutech');
+        log('IDE 启动失败，请手动打开 Antigravity');
     }
     
     log('========================================');

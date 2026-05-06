@@ -1,97 +1,96 @@
-# Anbutech Mission Control v1.0.0
+# Antigravity Mission Control v1.3.0
 
-> Professional multi-account management & AI token economy for Anbutech IDE
+> Professional multi-account management & AI token economy for Antigravity IDE
 
-A powerful VS Code extension for managing multiple Anbutech accounts, monitoring model quotas in real-time, and optimizing AI token consumption through intelligent working modes.
+A powerful VS Code extension for managing multiple Antigravity accounts, monitoring model quotas in real-time, and optimizing AI token consumption through intelligent working modes.
 
 ## 🌟 Core Features
 
-- **Professional Dashboard**: Glassmorphism-styled command center with Overview, Accounts, Grouping, and Settings tabs.
-- **One-Click Account Switching**: Fully automated flow — kills IDE processes, injects clean credentials into the database, and restarts IDE. Supports **Safe Mode** and **Advanced Mode**.
-- **Real-Time Quota Monitoring**: Visual progress bars with color-coded status (🟢 SAFE / 🟡 CAUTION / 🔴 CRITICAL) per model.
-- **Smart OAuth Authentication**: Built-in Google OAuth flow with auto-redirect or manual link copy.
-- **Token Login & Export**: Login via Refresh Token, export single/batch tokens (JSON format) for cross-device sync.
-- **Cross-Platform**: Full support for **Windows / macOS / Linux**.
+- **Professional Dashboard**: Glassmorphism-styled command center with live Telemetry, Fleet Grid, and Traffic Network modules.
+- **Smart OAuth & Token Management**: Built-in Google OAuth flow, login via Refresh Token, and batch export/import of tokens (JSON) for seamless cross-device synchronization.
+- **Dynamic Routing Groups**: Group specific AI models (e.g. Gemini, Claude) for customized quota tracking and status bar integration.
+- **Auto-Refresh Engine**: A robust, configurable background worker that continuously fetches quota updates without interfering with IDE performance (1-60 minutes).
+- **Cross-Platform Compatibility**: Full support for **Windows / macOS / Linux**.
 
-## ⚡ Smart Token Economy System
-- **AI Working Modes** — Control how the AI uses tokens:
-  - 🔥 **Full Power**: Default. Full context window, maximum capability.
-  - ⚡ **Efficient**: Reduced context, shorter prompts. ~40% token savings.
-  - 💬 **Review Only**: AI gives summaries instead of writing code. ~70% token savings.
-- **Auto-Rotate Accounts** — When any model on the active account drops below 10% quota, automatically suggests switching to the healthiest account.
-- **Quick Switch** (`Ctrl+Shift+A`) — Instantly switch to the account with the highest remaining quota.
+---
 
-## 📊 Professional Overview Dashboard
-- **Fleet Health**: Aggregated health score across all accounts and models.
-- **Traffic Monitor**: Per-model remaining quota with SAFE/CAUTION/CRITICAL badges.
-- **Account Health**: Per-account status with rate-limit detection.
-- **Global Burn Rate**: Animated capacity consumption bar.
-- **Credit Usage**: Precise token tracking (used / limit).
+## 🚀 Advanced Account Switching System
 
-## 🛡️ Clean-State Authentication
-- Sterile session initialization on every account switch — eliminates stale 429/traffic errors.
-- Scrubs `antigravityAuthStatus`, `antigravitySessionState`, `antigravityQuotaCache`, and `jetskiStateSync.sessionCache` during token injection.
+Antigravity Mission Control offers two distinct methods for switching active accounts, tailored to your workflow and stability requirements:
 
-## 🗂️ Model Group Management
-- **Auto Group**: Automatically create groups by model family (Claude, Gemini 3 Pro, Gemini 3 Flash, etc.)
-- **Manual Groups**: Create, edit, and delete custom groups
-- **Status Bar Display**: Per-group quota shown in the status bar with lowest-model indicator
+### ⚡ Advanced Switch (Default)
+The fastest, fully automated switching process designed for rapid account rotation.
+1. Kills all existing Antigravity background processes.
+2. Injects clean credentials (refresh tokens) directly into the IDE database.
+3. Completely scrubs stale `antigravityAuthStatus` and `antigravityQuotaCache` entries.
+4. Restarts the IDE automatically so you can continue working immediately.
 
-## 📊 Status Bar
-- **Group Quota**: `🟢 Claude: 100% | 🔴 Gemini 3 Flash: 0% | 🟢 Gemini 3 Pro: 100%`
-- **AI Mode Indicator**: Hover to see current AI working mode
-- **Detailed Tooltip**: Full quota panel on hover with model names, progress bars, and reset times
+### 🛡️ Safe Switch
+A deliberate, cautious approach for environments with high security restrictions or unpredictable background processes.
+1. Updates the credentials in the database quietly.
+2. **Does not forcibly kill any processes.**
+3. Pauses and prompts the user with an explicit notification to manually click "Restart IDE".
+4. *Use this mode if Advanced Switch leaves ghost processes on your operating system.*
 
-## ⏱️ Auto-Refresh
-- **Configurable interval**: 1-60 minutes (default 5)
-- **Dashboard control**: Adjust directly from the header
-- **Instant apply**: Changes take effect immediately
+---
 
-## 🔧 Diagnostics
-- **Environment Check** (`antigravity-cockpit.diagnoseEnvironment`): Node.js, database, IDE executable detection
-- **Switch Logs** (`antigravity-cockpit.openSwitchLogs`): Quick access to switch log files
+## 🛠️ Safe Clean (Corrupted Trajectory Rescue)
+
+When an AI agent session breaks or enters an infinite loop, it can corrupt local cache files, causing endless 429/500 errors even after an account switch.
+
+**Safe Clean** is a 1-click rescue protocol:
+- It safely deletes the hidden `.antigravity/` and `.jetski/` session folders from your project root.
+- **Your code files are completely untouched and safe.**
+- It automatically detects and resolves OS-level edge cases (like `worktreeConfig = true` Git conflicts introduced by Claude Code).
+- Fixes broken trajectory states instantly, allowing your newly switched account to start with a perfectly sterile environment.
+
+---
+
+## 📊 Cyber-Professional Model Telemetry
+
+- **Priority AI Quota Tracking**: The telemetry engine dynamically prioritizes active production models (e.g., locking onto "Gemini 3.1 Pro" over deprecated "Gemini 1.5 Pro").
+- **Fixed Layout Architecture**: A non-scrollable, statically aligned telemetry grid ensures your 3 core models are displayed clearly without layout shifts or clipped percentages.
+- **Traffic Throttling Detection**: Instantly alerts you if an API family (Gemini API / Claude API) enters a rate-limited or High Traffic state.
+
+---
 
 ## ⚙️ Configuration
 
+You can customize the extension directly in the dashboard or via your `settings.json`:
+
 | Setting | Description | Default |
 |---------|-------------|---------|
-| `antigravity-cockpit.aiMode` | AI working mode: `full-power` / `efficient` / `review` | `full-power` |
-| `antigravity-cockpit.autoRotate` | Auto-suggest switching when quota drops below 10% | `true` |
-| `antigravity-cockpit.autoRefreshInterval` | Auto-refresh interval (minutes), 1-60 | `5` |
-| `antigravity-cockpit.switchMode` | Switch mode: `safe` (manual restart) / `advanced` (full auto) | `advanced` |
-| `antigravity-cockpit.databasePathOverride` | Custom database path (empty = platform default) | `""` |
-| `antigravity-cockpit.processWaitSeconds` | Process wait time (seconds), 5-60 | `10` |
+| `antigravity-mission-control.switchMode` | Switch mode: `safe` (manual restart) / `advanced` (full auto) | `advanced` |
+| `antigravity-mission-control.autoRefreshInterval` | Dashboard polling interval in minutes (0 to disable). | `5` |
+| `antigravity-mission-control.processWaitSeconds` | Time to wait for processes to die during an Advanced Switch. | `10` |
+| `antigravity-mission-control.databasePathOverride` | Custom IDE database path (empty = auto-detect). | `""` |
+
+---
 
 ## ⌨️ Keyboard Shortcuts
 
 | Shortcut | Action |
 |----------|--------|
-| `Ctrl+Shift+A` | Quick Switch to healthiest account |
+| `Ctrl+Shift+A` | Quick Switch to healthiest account in the fleet |
 
-## 🛠️ Installation & Development
+---
+
+## 🛠️ Installation & Build
 
 ### Prerequisites
 - **Node.js**: >= 16.x
-- **Anbutech IDE**: ^1.80.0
-
-### Quick Start
-
-1. Clone the repository
-2. Install dependencies:
-   ```bash
-   npm install
-   ```
-3. Compile:
-   ```bash
-   npm run compile
-   ```
-4. Press `F5` in VS Code to launch the Extension Development Host.
+- **Antigravity IDE**: ^1.80.0
 
 ### Package for Production
+If you are compiling from source:
 ```bash
+npm install
+npm run compile
 npx vsce package
 ```
-Then install the `.vsix` via Extensions → `...` → Install from VSIX.
+Then install the compiled `.vsix` file via Extensions → `...` → Install from VSIX.
+
+---
 
 ## 📝 License
 
