@@ -1,0 +1,311 @@
+const vscode = acquireVsCodeApi();
+const state = vscode.getState() || {};
+let accounts = ACCOUNTS_PLACEHOLDER;
+let groupsConfig = GROUPS_PLACEHOLDER;
+let activeAccountId = state.activeAccountId;
+
+if (!activeAccountId || !accounts.find(a => a.id === activeAccountId)) {
+    const current = accounts.find(a => a.isCurrent);
+    activeAccountId = current ? current.id : (accounts[0] ? accounts[0].id : null);
+}
+
+// Ensure at least one account is selected
+function ensureActive() {
+    if (!accounts.find(a => a.id === activeAccountId) && accounts.length > 0) {
+        activeAccountId = accounts[0].id;
+    }
+}
+ensureActive();
+
+window.addEventListener('message', event => {
+    const m = event.data;
+    if (m.command === 'groupsConfig') { groupsConfig = m.config; renderGroupsList(); }
+    else if (m.command === 'updateAccounts') {
+        accounts = m.accounts;
+        if (m.uiState) state.uiState = m.uiState;
+        ensureActive();
+        renderAll();
+    }
+});
+
+// Automatic refresh of the selected account telemetry every 1 minute
+setInterval(() => {
+    if (activeAccountId) {
+        doRefresh(activeAccountId);
+    }
+}, 60000);
+
+function pctColor(p) { return p > 50 ? '#00ff66' : p > 20 ? '#d4a843' : '#ff2a2a'; }
+
+function renderAll() {
+    renderFocusNode();
+    renderFleetGrid();
+    renderTrafficNetwork();
+    document.getElementById('fleetCount').textContent = accounts.length;
+}
+
+function renderTrafficNetwork() {
+    // Determine overall traffic status for Gemini and Claude
+    const families = { 'GEMINI': false, 'CLAUDE': false };
+    
+    accounts.forEach(acc => {
+        if (acc.quota && acc.quota.is_error) {
+            const isRateLimit = acc.quota.error_status === 429;
+            const msgLower = (acc.quota.error_message || '').toLowerCase();
+            const isHighTraffic = msgLower.includes('high traffic') || msgLower.includes('rate limit') || msgLower.includes('too many requests') || msgLower.includes('resource exhausted');
+            
+            if (isRateLimit || isHighTraffic) {
+                if (acc.quota.models && acc.quota.models.length > 0) {
+                    acc.quota.models.forEach(m => {
+                        if (m.name.toLowerCase().includes('gemini')) families['GEMINI'] = true;
+                        if (m.name.toLowerCase().includes('claude')) families['CLAUDE'] = true;
+                    });
+                } else {
+                    // No model info available, mark both as throttled
+                    families['GEMINI'] = true;
+                    families['CLAUDE'] = true;
+                }
+            }
+        }
+    });
+
+    let h = '';
+    for (const [fam, throttled] of Object.entries(families)) {
+        h += `
+        <div class="traffic-item">
+            <span class="traffic-name">${fam} API</span>
+            ${throttled 
+                ? '<span class="traffic-badge tb-throttle">THROTTLED</span>' 
+                : '<span class="traffic-badge tb-clear">CLEAR</span>'}
+        </div>`;
+    }
+    document.getElementById('trafficStatusList').innerHTML = h;
+}
+
+function renderFocusNode() {
+    const panel = document.getElementById('focusNode');
+    const bdown = document.getElementById('modelsBreakdown');
+    const acc = accounts.find(a => a.id === activeAccountId);
+    if (!acc) {
+        panel.innerHTML = '<div style="color:var(--text-muted);text-align:center;margin-top:50px">NO ACCOUNT SELECTED</div>';
+        bdown.innerHTML = '';
+        return;
+    }
+
+    const isErr = acc.quota && acc.quota.is_error;
+    const isRl = isErr && acc.quota.error_status === 429;
+    let totalUsed = 0, totalLimit = 0, mCount = 0, health = 0, consumed = 0;
+
+    if (acc.quota && acc.quota.models && !isErr) {
+        let sum = 0;
+        acc.quota.models.forEach(m => {
+            mCount++;
+            sum += m.percentage;
+            totalUsed += m.used || 0;
+            totalLimit += m.limit || 0;
+        });
+        health = mCount > 0 ? Math.round(sum / mCount) : 0;
+        consumed = mCount > 0 ? (100 - health) : 0;
+    }
+
+    const tier = (acc.quota && acc.quota.tier) ? acc.quota.tier : 'UNKNOWN TIER';
+    const displayName = acc.name || acc.email.split('@')[0];
+    
+    // Top Hero section
+    let h = `
+        <div class="hero-top">
+            <div class="hero-info">
+                <div class="hero-name">${displayName}${acc.isCurrent ? '<span class="live-indicator">LIVE</span>' : ''}</div>
+                <div class="hero-email">${acc.email} | ${tier}</div>
+            </div>
+            <div class="hero-actions">
+                ${!acc.isCurrent ? `<button class="action-btn" onclick="doSwitch('${acc.id}','${acc.email}')">ACTIVATE</button>` : ''}
+                <button class="action-btn ghost" onclick="doRefresh('${acc.id}')">REFRESH</button>
+                <button class="action-btn ghost" onclick="doExportToken('${acc.id}')">EXPORT</button>
+                <button class="action-btn danger" onclick="doDelete('${acc.id}','${acc.email}')">DELETE</button>
+            </div>
+        </div>
+        <div class="hero-stats">
+            <div class="stat-box">
+                <div class="stat-val" style="color:${isErr ? 'var(--text-muted)' : pctColor(health)}">${isErr ? 'ERR' : health + '%'}</div>
+                <div class="stat-lbl">Integrity</div>
+            </div>
+            <div class="stat-box">
+                <div class="stat-val" style="color:var(--cyan)">${mCount}</div>
+                <div class="stat-lbl">Models</div>
+            </div>
+            <div class="stat-box">
+                <div class="stat-val" style="color:var(--gold)">${consumed}%</div>
+                <div class="stat-lbl">Used</div>
+            </div>
+        </div>
+    `;
+
+    panel.innerHTML = h;
+
+    // Breakdown section
+    let b = '<div class="card-title" style="display:flex;justify-content:space-between;align-items:center"><span>MODEL TELEMETRY</span><button class="action-btn ghost" style="padding:2px 8px;font-size:9px" onclick="toggleModelFilter(event)">FILTER</button></div>';
+    
+    // Build filter dropdown globally
+    let filterDD = '<div class="gc-dd" id="modelFilterDD" style="padding:10px;max-height:250px;overflow-y:auto;z-index:9999">';
+    const hiddenModels = state.uiState?.hiddenModels || [];
+    const allModels = getAllModels();
+    
+    allModels.forEach(m => {
+        const checked = !hiddenModels.includes(m.name) ? 'checked' : '';
+        filterDD += `<label style="display:block;margin-bottom:5px;font-size:11px;color:#fff;cursor:pointer">
+            <input type="checkbox" ${checked} onchange="toggleHideModel('${m.name}', this.checked)"> ${m.name}
+        </label>`;
+    });
+    filterDD += '</div>';
+    b += filterDD;
+
+    if (mCount > 0 && !isErr) {
+        b += '<div class="model-bars">';
+        acc.quota.models.forEach(m => {
+            if (hiddenModels.includes(m.name)) return;
+            const c = pctColor(m.percentage);
+            let rTime = 'Ready';
+            if (m.reset_time_raw || m.reset_time) {
+                const diff = new Date(m.reset_time_raw || m.reset_time).getTime() - Date.now();
+                if (diff > 0) rTime = Math.floor(diff/3600000)+'h '+Math.floor((diff%3600000)/60000)+'m';
+            }
+            const cons = 100 - m.percentage;
+            const usedVal = m.used || 0;
+            const limitVal = m.limit || 0;
+            const uStr = (usedVal > 0 || limitVal > 0) ? `${usedVal.toLocaleString()} / ${limitVal.toLocaleString()} tokens` : `${cons}% used`;
+
+            b += `
+            <div class="m-bar-wrap">
+                <div class="m-bar-top"><span>${m.name}</span><span style="color:${c}">${m.percentage}%</span></div>
+                <div class="m-bar-track"><div class="m-bar-fill" style="width:${m.percentage}%;background:${c};color:${c}"></div></div>
+                <div class="m-bar-sub"><span>${uStr}</span><span>Reset: ${rTime}</span></div>
+            </div>`;
+        });
+        b += '</div>';
+    } else if (isErr) {
+        b += `<div style="text-align:center;padding:20px;color:var(--red);font-family:monospace">
+            <div style="font-size:14px;margin-bottom:5px">[ HTTP ${isRl ? 429 : 500} ]</div>
+            <div>${isRl ? 'RATE LIMIT DETECTED' : 'TELEMETRY FAILURE'}</div>
+            <div style="font-size:10px;margin-top:5px;color:var(--text-muted)">${acc.quota.error_message || ''}</div>
+        </div>`;
+    } else {
+        b += `<div style="text-align:center;padding:20px;color:var(--text-muted);font-family:monospace">AWAITING TELEMETRY DATA...</div>`;
+    }
+    bdown.innerHTML = b;
+}
+
+function renderFleetGrid() {
+    const grid = document.getElementById('topology');
+    let h = '';
+    accounts.forEach(acc => {
+        const isCur = acc.isCurrent;
+        const isSel = acc.id === activeAccountId;
+        let p = 0;
+        if (acc.quota && acc.quota.models && !acc.quota.is_error && acc.quota.models.length > 0) {
+            p = Math.round(acc.quota.models.reduce((s,m)=>s+m.percentage,0)/acc.quota.models.length);
+        }
+        const isErr = acc.quota && acc.quota.is_error;
+        const c = isErr ? 'var(--red)' : pctColor(p);
+        const name = acc.name || acc.email.split('@')[0];
+
+        h += `
+        <div class="t-node-v ${isSel ? 'active' : ''}" onclick="selectNode('${acc.id}')">
+            ${isCur ? `<div class="t-indicator" style="background:var(--green);box-shadow:0 0 5px var(--green)"></div>` : ''}
+            <div class="t-ring" style="border-color:${c};color:${c}">${isErr ? '!' : p}</div>
+            <div class="t-info">
+                <div class="t-name">${name}</div>
+                <div class="t-email">${acc.email}</div>
+            </div>
+        </div>`;
+    });
+    grid.innerHTML = h;
+}
+
+function selectNode(id) {
+    activeAccountId = id;
+    vscode.setState({ activeAccountId });
+    renderAll();
+}
+
+// Actions
+function doSwitch(id, em) { vscode.postMessage({ command: 'switch', accountId: id, email: em }); }
+function doRefresh(id) { vscode.postMessage({ command: 'refresh', accountId: id }); }
+function doRefreshAll() { vscode.postMessage({ command: 'refreshAll' }); }
+function doAdd() { vscode.postMessage({ command: 'addAccount' }); }
+function doDelete(id, em) { vscode.postMessage({ command: 'delete', accountId: id, email: em }); }
+function doExportToken(id) { vscode.postMessage({ command: 'exportToken', accountId: id }); }
+function doBatchExport() { vscode.postMessage({ command: 'batchExportTokens' }); }
+
+function openTokenModal() { document.getElementById('tokenModal').classList.add('vis'); document.getElementById('tokenInput').value = ''; }
+function closeTokenModal() { document.getElementById('tokenModal').classList.remove('vis'); }
+function submitToken() { const t = document.getElementById('tokenInput').value.trim(); if(t) vscode.postMessage({ command: 'loginWithToken', token: t }); closeTokenModal(); }
+
+function openImportModal() { document.getElementById('importModal').classList.add('vis'); document.getElementById('importInput').value = ''; }
+function closeImportModal() { document.getElementById('importModal').classList.remove('vis'); }
+function submitImport() { const j = document.getElementById('importInput').value.trim(); if(j) vscode.postMessage({ command: 'batchImportTokens', jsonText: j }); closeImportModal(); }
+
+// UI Controls
+function toggleModelFilter(ev) {
+    ev.stopPropagation();
+    const dd = document.getElementById('modelFilterDD');
+    if(dd) {
+        document.querySelectorAll('.gc-dd').forEach(d => { if(d !== dd) d.classList.remove('show'); });
+        const r = ev.currentTarget.getBoundingClientRect();
+        dd.style.top = (r.bottom+2)+'px'; 
+        dd.style.right = (window.innerWidth - r.right) + 'px';
+        dd.style.left = 'auto';
+        dd.classList.toggle('show');
+    }
+}
+function toggleHideModel(name, isChecked) {
+    if (!state.uiState) state.uiState = {};
+    let hidden = state.uiState.hiddenModels || [];
+    if (!isChecked && !hidden.includes(name)) {
+        hidden.push(name);
+    } else if (isChecked && hidden.includes(name)) {
+        hidden = hidden.filter(n => n !== name);
+    }
+    state.uiState.hiddenModels = hidden;
+    vscode.postMessage({ command: 'updateUiState', state: { hiddenModels: hidden } });
+    renderFocusNode();
+}
+
+// Groups
+function getAllModels() { const m=[]; accounts.forEach(a=>{if(a.quota&&a.quota.models)a.quota.models.forEach(x=>{if(!m.find(y=>y.name===x.name))m.push({name:x.name});});}); return m; }
+function getGroupedModels() { const s=new Set(); if(groupsConfig.groups)groupsConfig.groups.forEach(g=>g.models.forEach(m=>s.add(m))); return s; }
+function openGroups() { document.getElementById('groupModal').classList.add('vis'); renderGroupsList(); }
+function closeGroups() { document.getElementById('groupModal').classList.remove('vis'); }
+function autoGroup() { vscode.postMessage({ command: 'autoGroup', models: getAllModels() }); }
+function addGroup() { vscode.postMessage({ command: 'addGroup', groupName: 'New Route' }); }
+function deleteGroup(id) { vscode.postMessage({ command: 'deleteGroup', groupId: id }); }
+function updateGroupName(id, name) { vscode.postMessage({ command: 'updateGroupName', groupId: id, newName: name }); }
+function addModelToGroup(gid, mn) { vscode.postMessage({ command: 'addModelToGroup', groupId: gid, modelName: mn }); }
+function removeModelFromGroup(gid, mn) { vscode.postMessage({ command: 'removeModelFromGroup', groupId: gid, modelName: mn }); }
+function saveGroups() { vscode.postMessage({ command: 'saveGroups', config: groupsConfig }); closeGroups(); }
+
+function renderGroupsList() {
+    const c = document.getElementById('groupsList'), all = getAllModels(), used = getGroupedModels();
+    if (!groupsConfig.groups || groupsConfig.groups.length === 0) { c.innerHTML = '<div style="text-align:center;padding:20px;color:var(--text-muted);font-family:monospace">NO GROUPS DEFINED</div>'; return; }
+    c.innerHTML = groupsConfig.groups.map(g => '<div class="gc"><div class="gc-head">'
+        + '<input type="text" class="gc-input" value="' + g.name + '" onchange="updateGroupName(\'' + g.id + '\',this.value)" onclick="event.stopPropagation()">'
+        + '<button class="action-btn danger ghost" style="padding:4px 8px;font-size:10px" onclick="deleteGroup(\'' + g.id + '\')">DEL</button></div>'
+        + '<div class="gc-tags">' + g.models.map(mn => '<span class="gc-tag">' + mn + '<span class="gc-rm" onclick="removeModelFromGroup(\'' + g.id + '\',\'' + mn + '\')">&times;</span></span>').join('')
+        + '<button class="gc-add" onclick="toggleDD(\'' + g.id + '\',event)">+ ADD</button>'
+        + '<div class="gc-dd" id="dd-' + g.id + '">' + all.filter(m => !g.models.includes(m.name)).map(m => '<div class="gc-dd-item' + (used.has(m.name)&&!g.models.includes(m.name)?' disabled':'') + '" onclick="' + (used.has(m.name)&&!g.models.includes(m.name)?'':("addModelToGroup('"+g.id+"','"+m.name+"')")) + '">' + m.name + '</div>').join('') + '</div>'
+        + '</div></div>').join('');
+}
+function toggleDD(gid, ev) {
+    ev.stopPropagation();
+    const dd = document.getElementById('dd-' + gid);
+    document.querySelectorAll('.gc-dd').forEach(d => { if(d.id !== 'dd-'+gid) d.classList.remove('show'); });
+    const r = ev.currentTarget.getBoundingClientRect();
+    dd.style.top = (r.bottom+2)+'px'; dd.style.left = r.left+'px';
+    dd.classList.toggle('show');
+}
+document.addEventListener('click', () => { document.querySelectorAll('.gc-dd').forEach(d => d.classList.remove('show')); });
+
+// Init
+setTimeout(() => {
+    renderAll();
+}, 100);
