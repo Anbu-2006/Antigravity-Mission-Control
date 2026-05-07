@@ -577,18 +577,8 @@ temp/
 
                         // 根据额度选择颜色图标
                         const icon = lowestModel.percentage > 50 ? "🟢" : (lowestModel.percentage > 20 ? "🟡" : "🔴");
-                        // Weekly Cap "False Hope" Detector: show (Weekly Cap) when reset > 24h
-                        let capLabel = '';
-                        if (lowestModel.percentage === 0) {
-                            const rawReset = lowestModel.reset_time_raw;
-                            if (rawReset) {
-                                const diffMs = new Date(rawReset).getTime() - Date.now();
-                                if (diffMs > 24 * 60 * 60 * 1000) {
-                                    capLabel = ' (Weekly Cap)';
-                                }
-                            }
-                        }
-                        groupTexts.push(`${icon} ${group.name}: ${lowestModel.percentage}%${capLabel}`);
+                        // Formatting as professional Cyber-Industrial text
+                        groupTexts.push(`${icon} ${group.name.toUpperCase()} [${lowestModel.percentage}%]`);
                     }
                 }
 
@@ -807,6 +797,92 @@ temp/
 
     // --- 定时自动刷新功能 ---
     let autoRefreshTimer: NodeJS.Timeout | undefined;
+    let statusGatorTimer: NodeJS.Timeout | undefined;
+
+    // --- StatusGator: Real-time Google Antigravity outage monitor ---
+    interface ServiceStatusCache {
+        status: 'UP' | 'POSSIBLE_OUTAGE' | 'LIKELY_OUTAGE' | 'MAINTENANCE' | 'UNKNOWN';
+        label: string;
+        reports: string;
+        fetchedAt: number;
+    }
+
+    let cachedServiceStatus: ServiceStatusCache = {
+        status: 'UNKNOWN',
+        label: 'Fetching status...',
+        reports: '',
+        fetchedAt: 0,
+    };
+
+    async function fetchStatusGator(): Promise<void> {
+        try {
+            const axiosLib = require('axios');
+            const res = await axiosLib.default.get('https://statusgator.com/services/google-antigravity', {
+                timeout: 10000,
+                headers: {
+                    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
+                    'Accept': 'text/html,application/xhtml+xml',
+                },
+                maxRedirects: 5,
+            });
+
+            const html: string = res.data as string;
+            let status: ServiceStatusCache['status'] = 'UNKNOWN';
+            let label = 'Status Unknown';
+            let reports = '';
+
+            // Extract user report count
+            const reportMatch = html.match(/(\d+)\s+outage reports in the last 24 hours/i);
+            if (reportMatch) {
+                reports = `${reportMatch[1]} reports / 24h`;
+            }
+
+            // Parse the primary status headline
+            if (/Likely\s+Google\s+Antigravity\s+outage/i.test(html) || /Likely outage/i.test(html.substring(0, 5000))) {
+                status = 'LIKELY_OUTAGE';
+                label = 'Likely Outage';
+            } else if (/Possible\s+Google\s+Antigravity\s+outage/i.test(html) || /Possible outage/i.test(html.substring(0, 5000))) {
+                status = 'POSSIBLE_OUTAGE';
+                label = 'Possible Outage';
+            } else if (/maintenance/i.test(html.substring(0, 5000))) {
+                status = 'MAINTENANCE';
+                label = 'Under Maintenance';
+            } else if (/service\s+up|currently\s+up|all\s+systems\s+operational/i.test(html.substring(0, 5000))) {
+                status = 'UP';
+                label = 'Service Up';
+            } else if (html.length > 1000) {
+                // Page loaded but no clear status keyword - treat as UP
+                status = 'UP';
+                label = 'Service Operational';
+            }
+
+            cachedServiceStatus = { status, label, reports, fetchedAt: Date.now() };
+            console.log(`[StatusGator] Fetched: ${label} | ${reports}`);
+
+            // Push the new status to the dashboard if it's open (and persist it for next open)
+            DashboardProvider.setAndPostServiceStatus(cachedServiceStatus);
+
+        } catch (err: any) {
+            console.warn('[StatusGator] Fetch failed:', err?.message || err);
+            cachedServiceStatus = {
+                status: 'UNKNOWN',
+                label: 'Status Unavailable',
+                reports: 'Network error',
+                fetchedAt: Date.now(),
+            };
+            DashboardProvider.setAndPostServiceStatus(cachedServiceStatus);
+        }
+    }
+
+    function setupStatusGatorPoller() {
+        if (statusGatorTimer) {
+            clearInterval(statusGatorTimer);
+            statusGatorTimer = undefined;
+        }
+        // Fetch immediately on startup, then every 5 minutes
+        fetchStatusGator();
+        statusGatorTimer = setInterval(fetchStatusGator, 5 * 60 * 1000);
+    }
 
     function setupAutoRefresh() {
         // 清除现有定时器
@@ -840,6 +916,8 @@ temp/
 
     // 初始化定时刷新
     setupAutoRefresh();
+    // 初始化 StatusGator 轮询
+    setupStatusGatorPoller();
 
     // --- DB 文件实时监听 (实时感知 IDE 登录) ---
     let dbWatchTimeout: NodeJS.Timeout | undefined;

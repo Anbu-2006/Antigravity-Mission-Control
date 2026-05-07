@@ -6,10 +6,10 @@ A powerful VS Code extension for managing multiple Antigravity accounts, monitor
 
 ## 🌟 Core Features
 
-- **Professional Dashboard**: Glassmorphism-styled command center with live Telemetry, Fleet Grid, and Traffic Network modules.
-- **Smart OAuth & Token Management**: Built-in Google OAuth flow, login via Refresh Token, and batch export/import of tokens (JSON) for seamless cross-device synchronization.
-- **Dynamic Routing Groups**: Group specific AI models (e.g. Gemini, Claude) for customized quota tracking and status bar integration.
-- **Auto-Refresh Engine**: A robust, configurable background worker that continuously fetches quota updates without interfering with IDE performance (1-60 minutes).
+- **Professional Dashboard**: Glassmorphism-styled command center with live Model Telemetry, Fleet Grid, and Traffic Network modules.
+- **Live API Traffic Monitor**: Real-time visualization of upload/download network I/O speeds for major AI providers directly in the dashboard.
+- **Multi-Model Tracking**: Compact UI to track API quotas and health for Gemini 3.1 Pro, Gemini 3.0 Flash, and Claude 3.5 Sonnet side-by-side.
+- **Smart OAuth & Token Management**: Built-in Google OAuth flow, login via Refresh Token, and batch export/import of tokens.
 - **Cross-Platform Compatibility**: Full support for **Windows / macOS / Linux**.
 
 ---
