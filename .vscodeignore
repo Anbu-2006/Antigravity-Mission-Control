@@ -3,6 +3,7 @@
 out/test/**
 src/**
 .gitignore
+.gitattributes
 .editorconfig
 tsconfig.json
 vsc-extension-quickstart.md
@@ -10,16 +11,26 @@ vsc-extension-quickstart.md
 .github/**
 *.vsix
 
-# 开发/文档/脚本目录 — 不需要打包进插件
+# Agent/dev directories — not needed in packaged extension
 .agent/**
+.antigravitycli/**
 docs/**
 conversation_records/**
 scripts/**
 scratch/**
 
-# 其他非必要文件
+# Build/dev scripts — not needed at runtime
+fix-badge.js
+fix-cats.ps1
 build.bat
 *.code-workspace
+
+# Documentation — not needed at runtime
 PROJECT_CONTEXT.md
+CHANGELOG.md
+
+# Lock file — not needed in extension
 package-lock.json
 
+# Sample/template files
+.antigravityignore

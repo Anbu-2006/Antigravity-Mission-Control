@@ -109,15 +109,22 @@ export class SwitcherProxy {
         // 4. 检查 IDE 可执行文件
         let idePath = '';
         if (platform === 'win32') {
-            idePath = exePathOverride?.win32?.trim() ||
-                path.join(process.env.LOCALAPPDATA || '', 'Programs', 'Antigravity', 'Antigravity.exe');
+            const defaultPathNew = path.join(process.env.LOCALAPPDATA || '', 'Programs', 'Antigravity IDE', 'Antigravity IDE.exe');
+            const defaultPathOld = path.join(process.env.LOCALAPPDATA || '', 'Programs', 'Antigravity', 'Antigravity.exe');
+            idePath = exePathOverride?.win32?.trim() || (fs.existsSync(defaultPathNew) ? defaultPathNew : defaultPathOld);
         } else if (platform === 'darwin') {
-            idePath = exePathOverride?.darwin?.trim() || '/Applications/Antigravity.app';
+            const defaultPathNew = '/Applications/Antigravity IDE.app';
+            const defaultPathOld = '/Applications/Antigravity.app';
+            idePath = exePathOverride?.darwin?.trim() || (fs.existsSync(defaultPathNew) ? defaultPathNew : defaultPathOld);
         } else {
             const possiblePaths = exePathOverride?.linux?.trim()
                 ? [exePathOverride.linux.trim()]
-                : ['/usr/bin/antigravity', '/opt/antigravity/antigravity',
-                    path.join(process.env.HOME || '', '.local/bin/antigravity')];
+                : [
+                    '/usr/bin/antigravity-ide', '/opt/antigravity-ide/antigravity-ide',
+                    '/usr/bin/antigravity', '/opt/antigravity/antigravity',
+                    path.join(process.env.HOME || '', '.local/bin/antigravity-ide'),
+                    path.join(process.env.HOME || '', '.local/bin/antigravity')
+                  ];
             for (const p of possiblePaths) {
                 if (fs.existsSync(p)) {
                     idePath = p;
@@ -280,8 +287,9 @@ function sleep(ms) {
 function isAntigravityRunning() {
     try {
         if (PLATFORM === 'win32') {
-            const result = execSync('tasklist /FI "IMAGENAME eq Antigravity.exe" /NH 2>nul', { encoding: 'utf-8', shell: true, windowsHide: true });
-            const running = result.toLowerCase().includes('antigravity.exe');
+            const result = execSync('tasklist /NH 2>nul', { encoding: 'utf-8', shell: true, windowsHide: true });
+            const low = result.toLowerCase();
+            const running = low.includes('antigravity.exe') || low.includes('antigravity ide.exe');
             log('进程检测结果: ' + (running ? '运行中' : '已退出'));
             return running;
         } else {
@@ -300,7 +308,7 @@ function killAllAntigravity() {
     log('正在强制关闭所有 Antigravity 进程...');
     try {
         if (PLATFORM === 'win32') {
-            // Windows: 使用 taskkill 强制关闭所有 Antigravity.exe 进程
+            // Windows: 使用 taskkill 强制关闭所有 Antigravity.exe 和 Antigravity IDE.exe 进程
             try {
                 execSync('taskkill /F /IM Antigravity.exe /T 2>nul', { 
                     encoding: 'utf-8', 
@@ -308,11 +316,16 @@ function killAllAntigravity() {
                     windowsHide: true,
                     timeout: 10000
                 });
-                log('taskkill 命令已执行');
-            } catch (e) {
-                // taskkill 在没有匹配进程时会返回非零退出码，这是正常的
-                log('taskkill 完成（可能没有运行中的进程）: ' + (e.message || ''));
-            }
+            } catch (e) {}
+            try {
+                execSync('taskkill /F /IM "Antigravity IDE.exe" /T 2>nul', { 
+                    encoding: 'utf-8', 
+                    shell: true, 
+                    windowsHide: true,
+                    timeout: 10000
+                });
+            } catch (e) {}
+            log('taskkill 命令已执行');
         } else {
             // Linux/macOS: 使用 pkill
             try {
@@ -617,17 +630,18 @@ function startIDE() {
     
     try {
         if (PLATFORM === 'win32') {
-            // 优先使用配置覆盖的路径
+            const defaultPathNew = path.join(process.env.LOCALAPPDATA || '', 'Programs', 'Antigravity IDE', 'Antigravity IDE.exe');
+            const defaultPathOld = path.join(process.env.LOCALAPPDATA || '', 'Programs', 'Antigravity', 'Antigravity.exe');
+            
             let exePath = EXE_PATH_OVERRIDE.win32 && EXE_PATH_OVERRIDE.win32.trim() 
                 ? EXE_PATH_OVERRIDE.win32.trim() 
-                : path.join(process.env.LOCALAPPDATA || '', 'Programs', 'Antigravity', 'Antigravity.exe');
+                : (fs.existsSync(defaultPathNew) ? defaultPathNew : defaultPathOld);
             
             log('LOCALAPPDATA: ' + (process.env.LOCALAPPDATA || ''));
             log('使用的 IDE 路径: ' + exePath);
             log('路径是否存在: ' + fs.existsSync(exePath));
 
-            // 方法1: 先尝试用协议启动（等价于你在资源管理器运行 antigravity://）
-            // 方法1: 先尝试用协议启动（等价于你在资源管理器运行 antigravity://）
+            // 方法1: 先尝试用协议启动
             const release = require('os').release();
             let isWin11 = false;
             try {
@@ -641,53 +655,45 @@ function startIDE() {
             }
 
             if (isWin11) {
-                log('尝试方法1: 使用 explorer antigravity:// 启动 IDE');
+                log('尝试方法1: 使用 explorer antigravity-ide:// and antigravity:// 启动 IDE');
                 try {
-                    const result1 = require('child_process').execSync(
-                        'explorer antigravity://',
-                        { encoding: 'utf-8', timeout: 10000 }
-                    );
-                    log('方法1 执行成功，输出: ' + (result1 || '(无输出)'));
-                    return true;
+                    require('child_process').execSync('explorer antigravity-ide://', { encoding: 'utf-8', timeout: 5000 });
                 } catch (e1) {
-                    // explorer 协议启动即使成功触发了程序，也可能返回非零退出码导致异常
-                    // 需要等待并检测进程是否已被成功启动
-                    log('方法1 execSync 抛出异常 (explorer 退出码非零是正常现象): ' + (e1.message || e1));
-                    log('等待 3 秒后检测 IDE 进程是否已启动...');
-                    
-                    // 同步等待 3 秒，给 IDE 进程启动时间
+                    log('新协议启动异常: ' + e1.message);
                     try {
-                        require('child_process').execSync(
-                            PLATFORM === 'win32' ? 'ping -n 4 127.0.0.1 > nul' : 'sleep 3',
-                            { encoding: 'utf-8', windowsHide: true, timeout: 10000 }
-                        );
-                    } catch (waitErr) {
-                        // 忽略等待异常
+                        require('child_process').execSync('explorer antigravity://', { encoding: 'utf-8', timeout: 5000 });
+                    } catch (e2) {
+                        log('旧协议启动异常: ' + e2.message);
                     }
-                    
-                    // 检测 Antigravity 进程是否已启动
-                    if (isAntigravityRunning()) {
-                        log('方法1 已成功启动 IDE (进程检测到 Antigravity.exe 正在运行)，跳过方法2');
-                        return true;
-                    }
-                    log('方法1 未能启动 IDE (进程未检测到)，将尝试方法2');
                 }
+
+                // 同步等待 3 秒，给 IDE 进程启动时间
+                try {
+                    require('child_process').execSync(
+                        PLATFORM === 'win32' ? 'ping -n 4 127.0.0.1 > nul' : 'sleep 3',
+                        { encoding: 'utf-8', windowsHide: true, timeout: 10000 }
+                    );
+                } catch (waitErr) {}
+                
+                // 检测 Antigravity 进程是否已启动
+                if (isAntigravityRunning()) {
+                    log('方法1 已成功启动 IDE，跳过方法2');
+                    return true;
+                }
+                log('方法1 未能启动 IDE，将尝试方法2');
             } else {
                 log('Win10 兼容模式: 跳过协议启动，直接尝试方法2 (spawn exe)');
             }
 
             // 方法2: 如果知道 exe 路径，直接拉起进程
             if (exePath && fs.existsSync(exePath)) {
-                // 再次检测，防止方法1延迟启动导致重复
                 if (isAntigravityRunning()) {
                     log('方法2 跳过: 检测到 Antigravity 进程已在运行');
                     return true;
                 }
                 
-                log('尝试方法2: spawn 直接启动 Antigravity.exe');
+                log('尝试方法2: spawn 直接启动 IDE');
                 
-                // 关键修复：清理环境变量，防止污染新进程
-                // 避免继承当前 VS Code 的 IPC 句柄、WebView 状态等
                 const cleanEnv = { ...process.env };
                 Object.keys(cleanEnv).forEach(key => {
                     if (key.startsWith('VSCODE_') || key.startsWith('ELECTRON_')) {
@@ -695,16 +701,14 @@ function startIDE() {
                     }
                 });
 
-                // OS-Level Edge Case: Chromium 'Home Directory' Terminal Blindness
                 if (!cleanEnv.HOME && cleanEnv.USERPROFILE) {
                     cleanEnv.HOME = cleanEnv.USERPROFILE;
-                    log('OS Edge Case: Set HOME to USERPROFILE to prevent Terminal Blindness');
                 }
 
                 const child = require('child_process').spawn(exePath, [], {
                     detached: true,
                     stdio: 'ignore',
-                    env: cleanEnv // 使用干净的环境变量
+                    env: cleanEnv
                 });
                 child.unref();
                 log('方法2 spawn 创建成功，PID: ' + child.pid);
@@ -718,30 +722,37 @@ function startIDE() {
             return false;
             
         } else if (PLATFORM === 'darwin') {
-            // macOS: 优先使用配置覆盖的路径
+            const appPathNew = '/Applications/Antigravity IDE.app';
+            const appPathOld = '/Applications/Antigravity.app';
             let appPath = EXE_PATH_OVERRIDE.darwin && EXE_PATH_OVERRIDE.darwin.trim()
                 ? EXE_PATH_OVERRIDE.darwin.trim()
-                : '/Applications/Antigravity.app';
+                : (fs.existsSync(appPathNew) ? appPathNew : appPathOld);
             
             log('使用的 macOS App 路径: ' + appPath);
             if (fs.existsSync(appPath)) {
-                execSync(\`open "\${appPath}"\`);
+                execSync('open "' + appPath + '"');
                 log('通过 App 路径启动成功');
                 return true;
             }
             log('App 路径不存在，尝试协议启动');
-            execSync('open antigravity://');
+            try {
+                execSync('open antigravity-ide://');
+            } catch (e1) {
+                try { execSync('open antigravity://'); } catch (e2) {}
+            }
             return true;
             
         } else {
-            // Linux: 优先使用配置覆盖的路径
             const possiblePaths = [];
             if (EXE_PATH_OVERRIDE.linux && EXE_PATH_OVERRIDE.linux.trim()) {
                 possiblePaths.push(EXE_PATH_OVERRIDE.linux.trim());
             }
             possiblePaths.push(
+                '/usr/bin/antigravity-ide',
+                '/opt/antigravity-ide/antigravity-ide',
                 '/usr/bin/antigravity',
                 '/opt/antigravity/antigravity',
+                path.join(process.env.HOME || '', '.local/bin/antigravity-ide'),
                 path.join(process.env.HOME || '', '.local/bin/antigravity')
             );
             
@@ -754,13 +765,17 @@ function startIDE() {
                 }
             }
             
-            // 尝试 xdg-open
             log('未找到可执行文件，尝试协议启动');
             try {
-                execSync('xdg-open antigravity://');
+                execSync('xdg-open antigravity-ide://');
                 return true;
             } catch (e) {
-                log('Linux 启动失败: ' + e.message);
+                try {
+                    execSync('xdg-open antigravity://');
+                    return true;
+                } catch (e2) {
+                    log('Linux 启动失败: ' + e2.message);
+                }
             }
         }
     } catch (e) {
@@ -793,12 +808,12 @@ async function main() {
         log('SAFE ABORT: Displaying critical lock error modal to user.');
         try {
             if (PLATFORM === 'win32') {
-                require('child_process').execSync('powershell -WindowStyle Hidden -Command "Add-Type -AssemblyName System.Windows.Forms; [System.Windows.Forms.MessageBox]::Show(\\'Critical Lock Error: Antigravity is still being held by a background process. Please open Task Manager, kill all Antigravity.exe processes, and try again.\\', \\'Antigravity Mission Control\\', \\'OK\\', \\'Error\\')"');
+                require('child_process').execSync('powershell -WindowStyle Hidden -Command "Add-Type -AssemblyName System.Windows.Forms; [System.Windows.Forms.MessageBox]::Show(\'Critical Lock Error: Antigravity IDE is still being held by a background process. Please open Task Manager, kill all Antigravity.exe or Antigravity IDE.exe processes, and try again.\', \'Antigravity Mission Control\', \'OK\', \'Error\')"');
             } else if (PLATFORM === 'darwin') {
-                require('child_process').execSync("osascript -e 'display dialog \\\"Critical Lock Error: Antigravity is still being held by a background process. Please open Activity Monitor, force quit Antigravity, and try again.\\\" buttons {\\\"OK\\\"} default button \\\"OK\\\" with icon stop with title \\\"Antigravity Mission Control\\\"'");
+                require('child_process').execSync("osascript -e 'display dialog \"Critical Lock Error: Antigravity IDE is still being held by a background process. Please open Activity Monitor, force quit Antigravity IDE, and try again.\" buttons {\"OK\"} default button \"OK\" with icon stop with title \"Antigravity Mission Control\"'");
             } else {
                 try {
-                    require('child_process').execSync('zenity --error --title="Antigravity Mission Control" --text="Critical Lock Error: Antigravity is still being held by a background process. Please kill all Antigravity processes and try again."');
+                    require('child_process').execSync('zenity --error --title="Antigravity Mission Control" --text="Critical Lock Error: Antigravity IDE is still being held by a background process. Please kill all Antigravity processes and try again."');
                 } catch(e) {}
             }
         } catch (modalErr) {

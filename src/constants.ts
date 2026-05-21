@@ -87,38 +87,30 @@ export function getVSCDBPath(overridePath?: string): string {
     const platform = os.platform();
 
     if (platform === 'win32') {
-        // 示例：C:\Users\<user>\AppData\Roaming\Antigravity\User\globalStorage\state.vscdb
-        return path.join(
-            process.env.APPDATA || '',
-            'Antigravity',
-            'User',
-            'globalStorage',
-            'state.vscdb'
-        );
+        const appData = process.env.APPDATA || '';
+        const newPath = path.join(appData, 'Antigravity IDE', 'User', 'globalStorage', 'state.vscdb');
+        if (fs.existsSync(newPath) || fs.existsSync(path.join(appData, 'Antigravity IDE'))) {
+            return newPath;
+        }
+        return path.join(appData, 'Antigravity', 'User', 'globalStorage', 'state.vscdb');
     }
 
     if (platform === 'darwin') {
-        // 示例：/Users/<user>/Library/Application Support/Antigravity/User/globalStorage/state.vscdb
-        return path.join(
-            os.homedir(),
-            'Library',
-            'Application Support',
-            'Antigravity',
-            'User',
-            'globalStorage',
-            'state.vscdb'
-        );
+        const appSupport = path.join(os.homedir(), 'Library', 'Application Support');
+        const newPath = path.join(appSupport, 'Antigravity IDE', 'User', 'globalStorage', 'state.vscdb');
+        if (fs.existsSync(newPath) || fs.existsSync(path.join(appSupport, 'Antigravity IDE'))) {
+            return newPath;
+        }
+        return path.join(appSupport, 'Antigravity', 'User', 'globalStorage', 'state.vscdb');
     }
 
-    // Linux / 其他类 Unix：示例：~/.config/Antigravity/User/globalStorage/state.vscdb
-    return path.join(
-        os.homedir(),
-        '.config',
-        'Antigravity',
-        'User',
-        'globalStorage',
-        'state.vscdb'
-    );
+    // Linux
+    const configDir = path.join(os.homedir(), '.config');
+    const newPath = path.join(configDir, 'Antigravity IDE', 'User', 'globalStorage', 'state.vscdb');
+    if (fs.existsSync(newPath) || fs.existsSync(path.join(configDir, 'Antigravity IDE'))) {
+        return newPath;
+    }
+    return path.join(configDir, 'Antigravity', 'User', 'globalStorage', 'state.vscdb');
 }
 
 // 向后兼容：保留常量导出（使用默认路径）

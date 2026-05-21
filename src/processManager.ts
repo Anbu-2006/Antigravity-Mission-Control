@@ -9,8 +9,9 @@ export class ProcessManager {
         try {
             const platform = os.platform();
             if (platform === 'win32') {
-                const { stdout } = await execAsync('tasklist /FI "IMAGENAME eq antigravity.exe" /NH');
-                return stdout.toLowerCase().includes('antigravity.exe');
+                const { stdout } = await execAsync('tasklist /NH');
+                const low = stdout.toLowerCase();
+                return low.includes('antigravity.exe') || low.includes('antigravity ide.exe');
             } else {
                 // macOS and Linux
                 const { stdout } = await execAsync('ps -A -o comm=');
@@ -30,10 +31,11 @@ export class ProcessManager {
             console.log('Sending kill signal...');
             const platform = os.platform();
             if (platform === 'win32') {
-                await execAsync('taskkill /F /IM antigravity.exe');
+                try { await execAsync('taskkill /F /IM antigravity.exe /T'); } catch (e) {}
+                try { await execAsync('taskkill /F /IM "antigravity ide.exe" /T'); } catch (e) {}
             } else {
                 // macOS and Linux
-                await execAsync('pkill -f antigravity || killall antigravity || true');
+                await execAsync('pkill -f -i antigravity || killall antigravity || true');
             }
             
             // Wait for process to disappear
@@ -59,7 +61,8 @@ export class ProcessManager {
             const platform = os.platform();
             if (platform === 'win32') {
                 // Use PowerShell Start-Process for reliable detached execution
-                const child = spawn('powershell', ['-Command', "Start-Process 'antigravity://'"], {
+                // Attempt new protocol, fallback to legacy protocol
+                const child = spawn('powershell', ['-Command', "Start-Process 'antigravity-ide://'; Start-Process 'antigravity://' -ErrorAction SilentlyContinue"], {
                     detached: true,
                     stdio: 'ignore',
                     windowsHide: true
@@ -67,18 +70,20 @@ export class ProcessManager {
                 child.unref();
             } else if (platform === 'darwin') {
                 // macOS
-                const child = spawn('open', ['antigravity://'], {
+                const child = spawn('open', ['antigravity-ide://'], {
                     detached: true,
                     stdio: 'ignore'
                 });
                 child.unref();
+                try { spawn('open', ['antigravity://'], { detached: true, stdio: 'ignore' }).unref(); } catch(e) {}
             } else {
                 // Linux
-                const child = spawn('xdg-open', ['antigravity://'], {
+                const child = spawn('xdg-open', ['antigravity-ide://'], {
                     detached: true,
                     stdio: 'ignore'
                 });
                 child.unref();
+                try { spawn('xdg-open', ['antigravity://'], { detached: true, stdio: 'ignore' }).unref(); } catch(e) {}
             }
         } catch (e) {
             console.error('Failed to start Antigravity', e);
