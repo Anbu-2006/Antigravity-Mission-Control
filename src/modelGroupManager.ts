@@ -204,12 +204,27 @@ export class ModelGroupManager {
 
         // Claude 系列
         if (lowerName.includes('claude')) {
+            if (lowerName.includes('4.6') || lowerName.includes('4-6')) {
+                return 'Claude 4.6 Thinking';
+            }
+            if (lowerName.includes('3.5') || lowerName.includes('3-5')) {
+                return 'Claude 3.5';
+            }
             return 'Claude';
         }
 
         // Gemini 系列
         if (lowerName.includes('gemini')) {
             // 区分不同的 Gemini 版本
+            if (lowerName.includes('gemini-3.1') || lowerName.includes('gemini 3.1')) {
+                if (lowerName.includes('pro')) {
+                    return 'Gemini 3.1 Pro';
+                }
+                if (lowerName.includes('flash')) {
+                    return 'Gemini 3.1 Flash';
+                }
+                return 'Gemini 3.1';
+            }
             if (lowerName.includes('gemini-3') || lowerName.includes('gemini 3')) {
                 if (lowerName.includes('pro')) {
                     return 'Gemini 3 Pro';
@@ -219,7 +234,22 @@ export class ModelGroupManager {
                 }
                 return 'Gemini 3';
             }
+            if (lowerName.includes('gemini-2.5') || lowerName.includes('gemini 2.5')) {
+                if (lowerName.includes('pro')) {
+                    return 'Gemini 2.5 Pro';
+                }
+                if (lowerName.includes('flash')) {
+                    return 'Gemini 2.5 Flash';
+                }
+                return 'Gemini 2.5';
+            }
             if (lowerName.includes('gemini-2') || lowerName.includes('gemini 2')) {
+                if (lowerName.includes('pro')) {
+                    return 'Gemini 2 Pro';
+                }
+                if (lowerName.includes('flash')) {
+                    return 'Gemini 2 Flash';
+                }
                 return 'Gemini 2';
             }
             return 'Gemini';
