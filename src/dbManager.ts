@@ -190,7 +190,7 @@ export class DBManager {
                 return [res, off];
             };
 
-            // 2. 寻找 Inner (Field 1)
+            // 2. 寻找带有 "oauthTokenInfoSentinelKey" 的 Inner (Field 1)
             let innerProto: Buffer | null = null;
             let offset = 0;
             while (offset < outerProto.length) {
@@ -200,8 +200,40 @@ export class DBManager {
 
                 if (fieldNum === 1) {
                     const [len, off2] = readVarint(outerProto, off1);
-                    innerProto = outerProto.subarray(off2, off2 + len);
-                    break;
+                    const candidateProto = outerProto.subarray(off2, off2 + len);
+
+                    let isTarget = false;
+                    let innerOffset = 0;
+                    while (innerOffset < candidateProto.length) {
+                        const [innerTag, innerOff1] = readVarint(candidateProto, innerOffset);
+                        const innerFieldNum = innerTag >> 3;
+                        if (innerFieldNum === 1) {
+                            const [innerLen, innerOff2] = readVarint(candidateProto, innerOff1);
+                            const keyStr = candidateProto.subarray(innerOff2, innerOff2 + innerLen).toString('utf-8');
+                            if (keyStr === "oauthTokenInfoSentinelKey") {
+                                isTarget = true;
+                                break;
+                            }
+                            innerOffset = innerOff2 + innerLen;
+                        } else {
+                            const innerWire = innerTag & 7;
+                            if (innerWire === 2) {
+                                const [innerLen, innerOff2] = readVarint(candidateProto, innerOff1);
+                                innerOffset = innerOff2 + innerLen;
+                            } else if (innerWire === 0) {
+                                const [, innerOff2] = readVarint(candidateProto, innerOff1);
+                                innerOffset = innerOff2;
+                            } else {
+                                innerOffset = innerOff1 + 8;
+                            }
+                        }
+                    }
+
+                    if (isTarget) {
+                        innerProto = candidateProto;
+                        break;
+                    }
+                    offset = off2 + len;
                 } else {
                     if (wire === 2) {
                         const [len, off2] = readVarint(outerProto, off1);
@@ -212,6 +244,7 @@ export class DBManager {
                     } else { offset = off1 + 8; }
                 }
             }
+
             if (!innerProto) return null;
 
             // 3. 寻找 B64_OAuthInfo (Field 2)
@@ -222,16 +255,42 @@ export class DBManager {
                 const fieldNum = tag >> 3;
                 if (fieldNum === 2) {
                     const [len, off2] = readVarint(innerProto, off1);
-                    oauthInfoB64Str = innerProto.subarray(off2, off2 + len).toString('utf-8');
+                    const field2SubMsg = innerProto.subarray(off2, off2 + len);
+
+                    let subOffset = 0;
+                    while (subOffset < field2SubMsg.length) {
+                        const [subTag, subOff1] = readVarint(field2SubMsg, subOffset);
+                        const subFieldNum = subTag >> 3;
+                        if (subFieldNum === 1) {
+                            const [subLen, subOff2] = readVarint(field2SubMsg, subOff1);
+                            oauthInfoB64Str = field2SubMsg.subarray(subOff2, subOff2 + subLen).toString('utf-8');
+                            break;
+                        } else {
+                            const subWire = subTag & 7;
+                            if (subWire === 2) {
+                                const [subLen, subOff2] = readVarint(field2SubMsg, subOff1);
+                                subOffset = subOff2 + subLen;
+                            } else if (subWire === 0) {
+                                const [, subOff2] = readVarint(field2SubMsg, subOff1);
+                                subOffset = subOff2;
+                            } else {
+                                subOffset = subOff1 + 8;
+                            }
+                        }
+                    }
                     break;
                 } else {
                     const wire = tag & 7;
                     if (wire === 2) {
                         const [len, off2] = readVarint(innerProto, off1);
                         offset = off2 + len;
-                    } else { offset++; }
+                    } else if (wire === 0) {
+                        const [, off2] = readVarint(outerProto, off1);
+                        offset = off2;
+                    } else { offset = off1 + 8; }
                 }
             }
+
             if (!oauthInfoB64Str) return null;
 
             // 4. 解析 OAuthInfo

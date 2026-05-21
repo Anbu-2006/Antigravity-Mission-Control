@@ -764,10 +764,18 @@ temp/
     const SWITCH_COOLDOWN_MS = 60000;
 
     // Initial update: 先进行静默对账修剪微小误差，再检测 IDE 当前账号情况并刷新状态栏
-    AccountManager.reconcileIndexAtStartup();
-    syncWithIdeAccount().finally(() => {
-        updateStatusBar();
-    });
+    try {
+        AccountManager.reconcileIndexAtStartup();
+        syncWithIdeAccount().catch(e => {
+            console.error('[Cockpit] Failed to sync with IDE account at startup:', e);
+        }).finally(() => {
+            updateStatusBar().catch(e => {
+                console.error('[Cockpit] Failed to update status bar at startup:', e);
+            });
+        });
+    } catch (e) {
+        console.error('[Cockpit] Failed to run startup operations:', e);
+    }
     // Refresh status bar when list is refreshed
     const originalRefresh = accountTreeProvider.refresh.bind(accountTreeProvider);
     accountTreeProvider.refresh = () => {
