@@ -251,6 +251,13 @@ export class SwitcherProxy {
             ? dbPathOverride.trim()
             : getVSCDBPath();
 
+        // Define modal commands outside the template literal to avoid quote escaping syntax errors when written to JS
+        const showWinModalCmd = 'powershell -WindowStyle Hidden -Command "Add-Type -AssemblyName System.Windows.Forms; [System.Windows.Forms.MessageBox]::Show(\'Critical Lock Error: Antigravity IDE is still being held by a background process. Please open Task Manager, kill all Antigravity.exe or Antigravity IDE.exe processes, and try again.\', \'Antigravity Mission Control\', \'OK\', \'Error\')"';
+
+        const showMacModalCmd = "osascript -e 'display dialog \"Critical Lock Error: Antigravity IDE is still being held by a background process. Please open Activity Monitor, force quit Antigravity IDE, and try again.\" buttons {\"OK\"} default button \"OK\" with icon stop with title \"Antigravity Mission Control\"'";
+
+        const showLinuxModalCmd = 'zenity --error --title="Antigravity Mission Control" --text="Critical Lock Error: Antigravity IDE is still being held by a background process. Please kill all Antigravity processes and try again."';
+
         // 生成跨平台的独立 Node.js 脚本
         const mainScriptContent = `
 const fs = require('fs');
@@ -820,12 +827,12 @@ async function main() {
         log('SAFE ABORT: Displaying critical lock error modal to user.');
         try {
             if (PLATFORM === 'win32') {
-                require('child_process').execSync('powershell -WindowStyle Hidden -Command "Add-Type -AssemblyName System.Windows.Forms; [System.Windows.Forms.MessageBox]::Show(\'Critical Lock Error: Antigravity IDE is still being held by a background process. Please open Task Manager, kill all Antigravity.exe or Antigravity IDE.exe processes, and try again.\', \'Antigravity Mission Control\', \'OK\', \'Error\')"');
+                require('child_process').execSync(${JSON.stringify(showWinModalCmd)});
             } else if (PLATFORM === 'darwin') {
-                require('child_process').execSync("osascript -e 'display dialog \"Critical Lock Error: Antigravity IDE is still being held by a background process. Please open Activity Monitor, force quit Antigravity IDE, and try again.\" buttons {\"OK\"} default button \"OK\" with icon stop with title \"Antigravity Mission Control\"'");
+                require('child_process').execSync(${JSON.stringify(showMacModalCmd)});
             } else {
                 try {
-                    require('child_process').execSync('zenity --error --title="Antigravity Mission Control" --text="Critical Lock Error: Antigravity IDE is still being held by a background process. Please kill all Antigravity processes and try again."');
+                    require('child_process').execSync(${JSON.stringify(showLinuxModalCmd)});
                 } catch(e) {}
             }
         } catch (modalErr) {
