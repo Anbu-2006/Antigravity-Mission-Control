@@ -2212,3 +2212,4 @@ async function getUserInfo(accessToken: string): Promise<any> {
 }
 
 export function deactivate() { }
+

@@ -476,7 +476,7 @@ export class DashboardProvider {
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Anbutech Mission Control</title>
+<title>Anbudev Mission Control</title>
 <style>
 @import url('https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700;900&family=Inter:wght@400;600;800&display=swap');
 *{margin:0;padding:0;box-sizing:border-box}
@@ -768,3 +768,4 @@ document.addEventListener('DOMContentLoaded', function() {
 </html>`;
     }
 }
+

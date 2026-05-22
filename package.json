@@ -2,12 +2,12 @@
   "name": "antigravity-mission-control",
   "displayName": "Antigravity Mission Control",
   "description": "%extension.description%",
-  "version": "1.4.0",
-  "publisher": "anbutech",
+  "version": "1.0.0",
+  "publisher": "anbudev",
   "icon": "resources/icon.png",
   "repository": {
     "type": "git",
-    "url": "https://github.com/at2008/antigravity-mission-control.git"
+    "url": "https://github.com/Anbu-2006/Antigravity-Mission-Control.git"
   },
   "engines": {
     "vscode": "^1.95.0"
@@ -95,7 +95,6 @@
     "configuration": {
       "title": "Antigravity Mission Control",
       "properties": {
-
         "antigravity-mission-control.switchMode": {
           "type": "string",
           "enum": [
@@ -140,7 +139,13 @@
         "antigravity-mission-control.autoRefreshInterval": {
           "type": "integer",
           "default": 5,
-          "enum": [0, 1, 5, 10, 15],
+          "enum": [
+            0,
+            1,
+            5,
+            10,
+            15
+          ],
           "description": "Auto-refresh interval in minutes (0 to disable)."
         }
       }
@@ -150,7 +155,6 @@
     "vscode:prepublish": "npm run compile",
     "compile": "tsc -p ./",
     "watch": "tsc -watch -p ./",
-
     "pretest": "npm run compile && npm run lint",
     "lint": "eslint src --ext ts",
     "test": "node ./out/test/runTest.js"

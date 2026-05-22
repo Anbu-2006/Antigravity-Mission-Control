@@ -1,6 +1,6 @@
 # 🛡️ Antigravity Mission Control
 
-[![Version](https://img.shields.io/badge/version-1.4.0-blueviolet.svg?style=for-the-badge)](https://github.com/at2008/antigravity-mission-control)
+[![Version](https://img.shields.io/badge/version-1.0.0-blueviolet.svg?style=for-the-badge)](https://github.com/at2008/antigravity-mission-control)
 [![VS Code](https://img.shields.io/badge/VS_Code-^1.95.0-blue.svg?style=for-the-badge&logo=visual-studio-code)](https://code.visualstudio.com)
 [![Platform](https://img.shields.io/badge/Platform-Windows%20%7C%20macOS%20%7C%20Linux-brightgreen.svg?style=for-the-badge)](https://github.com/at2008/antigravity-mission-control)
 [![License](https://img.shields.io/badge/License-MIT-orange.svg?style=for-the-badge)](https://opensource.org/licenses/MIT)
@@ -88,4 +88,5 @@ Package the extension locally to verify code changes or install manually:
 
 ## 📜 License
 
-This project is licensed under the MIT License. See [LICENSE](file:///E:/Antigravity/Antigravity-Mission-Control/LICENSE) for details.
+This project is licensed under the MIT License. See [LICENSE](file:///E:/Antigravity/antigravity-mission-control/LICENSE) for details.
+
