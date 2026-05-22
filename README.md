@@ -1,97 +1,91 @@
-# Antigravity Mission Control v1.3.0
+# 🛡️ Antigravity Mission Control
 
-> Professional multi-account management & AI token economy for Antigravity IDE
+[![Version](https://img.shields.io/badge/version-1.4.0-blueviolet.svg?style=for-the-badge)](https://github.com/at2008/antigravity-mission-control)
+[![VS Code](https://img.shields.io/badge/VS_Code-^1.95.0-blue.svg?style=for-the-badge&logo=visual-studio-code)](https://code.visualstudio.com)
+[![Platform](https://img.shields.io/badge/Platform-Windows%20%7C%20macOS%20%7C%20Linux-brightgreen.svg?style=for-the-badge)](https://github.com/at2008/antigravity-mission-control)
+[![License](https://img.shields.io/badge/License-MIT-orange.svg?style=for-the-badge)](https://opensource.org/licenses/MIT)
 
-A powerful VS Code extension for managing multiple Antigravity accounts, monitoring model quotas in real-time, and optimizing AI token consumption through intelligent working modes.
-
-## 🌟 Core Features
-
-- **Professional Dashboard**: Glassmorphism-styled command center with live Model Telemetry, Fleet Grid, and Traffic Network modules.
-- **Live API Traffic Monitor**: Real-time visualization of upload/download network I/O speeds for major AI providers directly in the dashboard.
-- **Multi-Model Tracking**: Compact UI to track API quotas and health for Gemini 3.1 Pro, Gemini 3.0 Flash, and Claude 3.5 Sonnet side-by-side.
-- **Smart OAuth & Token Management**: Built-in Google OAuth flow, login via Refresh Token, and batch export/import of tokens.
-- **Cross-Platform Compatibility**: Full support for **Windows / macOS / Linux**.
+> **Antigravity Mission Control** is a cyber-professional multi-account command center and AI token economy optimizer built specifically for the **Antigravity IDE**. Gain full observability into your active LLM subscriptions, route models intelligently, and switch active profiles seamlessly without interruption.
 
 ---
 
-## 🚀 Advanced Account Switching System
+## 🌟 Core Architecture & Key Capabilities
 
-Antigravity Mission Control offers two distinct methods for switching active accounts, tailored to your workflow and stability requirements:
+### 1. 📊 Advanced Telemetry & Glassmorphism Dashboard
+- **Obsidian Dark & Cyberpunk Palette**: Visual interface with curated translucent panels, vibrant progress gauges, and active status indicators.
+- **Friendly Model Identifier**: Automatically maps cryptic system model IDs (like `gemini-3.1-pro-low`) into human-readable, premium display labels (such as **Gemini 3.1 Pro (Low)** and **Claude Sonnet 4.6 (Thinking)**).
+- **Traffic Network Pulse**: Live status indicators for the Google Antigravity backend, reporting outage, maintenance, and rate-limit states dynamically via **StatusGator integration**.
 
-### ⚡ Advanced Switch (Default)
-The fastest, fully automated switching process designed for rapid account rotation.
-1. Kills all existing Antigravity background processes.
-2. Injects clean credentials (refresh tokens) directly into the IDE database.
-3. Completely scrubs stale `antigravityAuthStatus` and `antigravityQuotaCache` entries.
-4. Restarts the IDE automatically so you can continue working immediately.
+### 2. ⚡ Frictionless Switch Engine
+- **Windows Silent Protocol Fallback**: Employs background `cmd /c start` sub-spawning instead of legacy `explorer.exe` protocol calls, completely bypassing Windows "Application not found" popup dialogs when URI protocols are unconfigured.
+- **Auto-Injectors**: Quietly populates credential tokens directly into the `.vscdb` storage layer and purges stale auth states (`antigravityAuthStatus` / `antigravityQuotaCache`) to ensure instant authentication.
+- **Method Rotator**: Seamlessly cascades from direct system subprocess execution to lightweight shell protocol triggers.
 
-### 🛡️ Safe Switch
-A deliberate, cautious approach for environments with high security restrictions or unpredictable background processes.
-1. Updates the credentials in the database quietly.
-2. **Does not forcibly kill any processes.**
-3. Pauses and prompts the user with an explicit notification to manually click "Restart IDE".
-4. *Use this mode if Advanced Switch leaves ghost processes on your operating system.*
+### 3. 🛡️ Network Resilience & VPN Hardening
+- **SSL-Inspection Shield**: Detects when corporate firewalls or VPNs block backend handshakes (e.g. self-signed certificates, leaf verification failures) and automatically suspends background telemetry loops to prevent a retry/request storm.
+- **Active Handshake Guard**: Verifies backend subscription status on startup before releasing queries, preventing rapid account bans or immediate 429 locks.
 
----
-
-## 🛠️ Safe Clean (Corrupted Trajectory Rescue)
-
-When an AI agent session breaks or enters an infinite loop, it can corrupt local cache files, causing endless 429/500 errors even after an account switch.
-
-**Safe Clean** is a 1-click rescue protocol:
-- It safely deletes the hidden `.antigravity/` and `.jetski/` session folders from your project root.
-- **Your code files are completely untouched and safe.**
-- It automatically detects and resolves OS-level edge cases (like `worktreeConfig = true` Git conflicts introduced by Claude Code).
-- Fixes broken trajectory states instantly, allowing your newly switched account to start with a perfectly sterile environment.
+### 4. 🧹 Sterile Trajectory Clean (Corrupted Session Rescue)
+- **1-Click Trajectory Scrubbing**: Purges transient directory states (`.antigravity/` and `.jetski/`) from your active workspace workspace.
+- **Zero-Risk to Source Code**: Completely preserves actual project files while resetting broken agent loops and index corruptions.
+- **Git Worktree Coexistence**: Resolves Git repository blocks by resetting stale git attributes (`worktreeConfig = true` / repository version downgrades) introduced by external CLI tools.
 
 ---
 
-## 📊 Cyber-Professional Model Telemetry
+## 🚀 Two Switch Modes
 
-- **Priority AI Quota Tracking**: The telemetry engine dynamically prioritizes active production models (e.g., locking onto "Gemini 3.1 Pro" over deprecated "Gemini 1.5 Pro").
-- **Fixed Layout Architecture**: A non-scrollable, statically aligned telemetry grid ensures your 3 core models are displayed clearly without layout shifts or clipped percentages.
-- **Traffic Throttling Detection**: Instantly alerts you if an API family (Gemini API / Claude API) enters a rate-limited or High Traffic state.
+Modify your active profile using either of the built-in operating behaviors:
 
----
-
-## ⚙️ Configuration
-
-You can customize the extension directly in the dashboard or via your `settings.json`:
-
-| Setting | Description | Default |
-|---------|-------------|---------|
-| `antigravity-mission-control.switchMode` | Switch mode: `safe` (manual restart) / `advanced` (full auto) | `advanced` |
-| `antigravity-mission-control.autoRefreshInterval` | Dashboard polling interval in minutes (0 to disable). | `5` |
-| `antigravity-mission-control.processWaitSeconds` | Time to wait for processes to die during an Advanced Switch. | `10` |
-| `antigravity-mission-control.databasePathOverride` | Custom IDE database path (empty = auto-detect). | `""` |
-
----
-
-## ⌨️ Keyboard Shortcuts
-
-| Shortcut | Action |
-|----------|--------|
-| `Ctrl+Shift+A` | Quick Switch to healthiest account in the fleet |
-
----
-
-## 🛠️ Installation & Build
-
-### Prerequisites
-- **Node.js**: >= 16.x
-- **Antigravity IDE**: ^1.80.0
-
-### Package for Production
-If you are compiling from source:
-```bash
-npm install
-npm run compile
-npx vsce package
+```mermaid
+graph TD
+    A[Trigger Account Switch] --> B{Switch Mode?}
+    B -->|Advanced Mode| C[Hard Kill Antigravity IDE Processes]
+    C --> D[Inject DB Credentials & Wipe Cache]
+    D --> E[Re-launch IDE via Subprocess / Protocol]
+    B -->|Safe Mode| F[Inject DB Credentials Only]
+    F --> G[Display VS Code Notification Prompt]
+    G --> H[User Manually clicks Restart]
 ```
-Then install the compiled `.vsix` file via Extensions → `...` → Install from VSIX.
 
 ---
 
-## 📝 License
+## ⚙️ Configuration & Settings
 
-MIT License
+Fine-tune extension behaviors directly via VS Code settings (`settings.json`):
+
+| Setting Key | Type | Default | Description |
+| :--- | :--- | :--- | :--- |
+| `antigravity-mission-control.switchMode` | `enum` | `"advanced"` | Switch method: `"advanced"` (automatic process kill and restart) or `"safe"` (graceful background injection). |
+| `antigravity-mission-control.autoRefreshInterval` | `integer` | `5` | Background telemetry polling interval in minutes (`0` to disable auto-refresh entirely). |
+| `antigravity-mission-control.processWaitSeconds` | `integer` | `10` | Waiting limit (in seconds) to let lingering IDE background tasks cleanly terminate during reload. |
+| `antigravity-mission-control.databasePathOverride` | `string` | `""` | Manual override path to the IDE sqlite db (`state.vscdb`). Leave blank for automated directory traversal. |
+
+---
+
+## ⌨️ Shortcuts & Hotkeys
+
+- **Quick Health Rotation**: Press `Ctrl+Shift+A` (or `Cmd+Shift+A` on macOS) to instantly switch active credentials to the profile containing the highest integrity level and healthiest quota.
+
+---
+
+## 📦 Developer Guide: Building from Source
+
+Package the extension locally to verify code changes or install manually:
+
+1. **Install Dependencies & Compile TS**:
+   ```bash
+   npm install
+   npm run compile
+   ```
+2. **Package into VSIX**:
+   ```bash
+   npx vsce package --no-git-tag-version
+   ```
+3. **Install manually**:
+   Open Command Palette (`Ctrl+Shift+P`) → type `Extensions: Install from VSIX...` → Select the generated `.vsix` file.
+
+---
+
+## 📜 License
+
+This project is licensed under the MIT License. See [LICENSE](file:///E:/Antigravity/Antigravity-Mission-Control/LICENSE) for details.

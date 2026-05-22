@@ -2092,6 +2092,10 @@ temp/
                 clearInterval(autoRefreshTimer);
                 autoRefreshTimer = undefined;
             }
+            if (statusGatorTimer) {
+                clearInterval(statusGatorTimer);
+                statusGatorTimer = undefined;
+            }
             if (dbWatchTimeout) {
                 clearTimeout(dbWatchTimeout);
                 dbWatchTimeout = undefined;
