@@ -25,6 +25,7 @@ import { DashboardProvider } from './dashboardProvider';
 import { ModelGroupManager } from './modelGroupManager';
 import { SwitcherProxy } from './switcherProxy';
 import { t } from './i18n';
+import { getModelDisplayName } from './utils';
 
 /**
  * 计算字符串在等宽字体下的视觉宽度
@@ -630,7 +631,7 @@ temp/
                 }
 
                 const modelsOnly = itemsToRender.filter(item => item.model).map(item => item.model);
-                const maxNameWidth = Math.max(...modelsOnly.map(m => getLen(m.name)), 15);
+                const maxNameWidth = Math.max(...modelsOnly.map(m => getLen(getModelDisplayName(m.name))), 15);
                 const lines: string[] = [];
 
                 itemsToRender.forEach(item => {
@@ -660,8 +661,9 @@ temp/
                         const pctStr = (m.percentage.toFixed(0) + '%').padStart(4, ' ');
                         const timeStr = timeInfo.padStart(13, ' ');
 
-                        const namePadding = ' '.repeat(Math.max(0, maxNameWidth - getLen(m.name)));
-                        const paddedName = m.name + namePadding;
+                        const friendlyName = getModelDisplayName(m.name);
+                        const namePadding = ' '.repeat(Math.max(0, maxNameWidth - getLen(friendlyName)));
+                        const paddedName = friendlyName + namePadding;
 
                         lines.push(`${icon} ${paddedName} ${progressBar} ${pctStr} → ${timeStr}`);
                     }

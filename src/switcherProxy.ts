@@ -660,58 +660,14 @@ function startIDE() {
             log('使用的 IDE 路径: ' + exePath);
             log('路径是否存在: ' + fs.existsSync(exePath));
 
-            // 方法1: 先尝试用协议启动
-            const release = require('os').release();
-            let isWin11 = false;
-            try {
-                const release = require('os').release();
-                const build = parseInt(release.split('.')[2] || '0');
-                isWin11 = build >= 22000;
-                log('Windows 版本: ' + release + (isWin11 ? ' (Win11+)' : ' (Win10 or older)'));
-            } catch (verErr) {
-                log('版本检测失败，默认为非 Win11: ' + verErr.message);
-                isWin11 = false;
-            }
-
-            if (isWin11) {
-                log('尝试方法1: 使用 explorer antigravity-ide:// and antigravity:// 启动 IDE');
-                try {
-                    require('child_process').execSync('explorer antigravity-ide://', { encoding: 'utf-8', timeout: 5000 });
-                } catch (e1) {
-                    log('新协议启动异常: ' + e1.message);
-                    try {
-                        require('child_process').execSync('explorer antigravity://', { encoding: 'utf-8', timeout: 5000 });
-                    } catch (e2) {
-                        log('旧协议启动异常: ' + e2.message);
-                    }
-                }
-
-                // 同步等待 3 秒，给 IDE 进程启动时间
-                try {
-                    require('child_process').execSync(
-                        PLATFORM === 'win32' ? 'ping -n 4 127.0.0.1 > nul' : 'sleep 3',
-                        { encoding: 'utf-8', windowsHide: true, timeout: 10000 }
-                    );
-                } catch (waitErr) {}
-                
-                // 检测 Antigravity 进程是否已启动
-                if (isAntigravityRunning()) {
-                    log('方法1 已成功启动 IDE，跳过方法2');
-                    return true;
-                }
-                log('方法1 未能启动 IDE，将尝试方法2');
-            } else {
-                log('Win10 兼容模式: 跳过协议启动，直接尝试方法2 (spawn exe)');
-            }
-
-            // 方法2: 如果知道 exe 路径，直接拉起进程
+            // 方法1: 如果知道 exe 路径，直接拉起进程 (最可靠，无 Windows 协议弹窗)
             if (exePath && fs.existsSync(exePath)) {
                 if (isAntigravityRunning()) {
-                    log('方法2 跳过: 检测到 Antigravity 进程已在运行');
+                    log('方法1 跳过: 检测到 Antigravity 进程已在运行');
                     return true;
                 }
                 
-                log('尝试方法2: spawn 直接启动 IDE');
+                log('尝试方法1: spawn 直接启动 IDE');
                 
                 const cleanEnv = { ...process.env };
                 Object.keys(cleanEnv).forEach(key => {
@@ -730,11 +686,50 @@ function startIDE() {
                     env: cleanEnv
                 });
                 child.unref();
-                log('方法2 spawn 创建成功，PID: ' + child.pid);
+                log('方法1 spawn 创建成功，PID: ' + child.pid);
                 log('IDE 启动指令已发送');
                 return true;
             } else {
-                log('方法2 失败: 找不到可执行文件路径');
+                log('方法1 失败: 找不到可执行文件路径，将尝试方法2 (协议启动)');
+            }
+
+            // 方法2: 协议启动 (作为备份方案)
+            const release = require('os').release();
+            let isWin11 = false;
+            try {
+                const release = require('os').release();
+                const build = parseInt(release.split('.')[2] || '0');
+                isWin11 = build >= 22000;
+                log('Windows 版本: ' + release + (isWin11 ? ' (Win11+)' : ' (Win10 or older)'));
+            } catch (verErr) {
+                log('版本检测失败，默认为非 Win11: ' + verErr.message);
+                isWin11 = false;
+            }
+
+            log('尝试方法2: 使用 cmd /c start 协议启动 IDE (静默模式，避免 explorer.exe 弹窗)');
+            try {
+                require('child_process').execSync('cmd /c start "" antigravity-ide://', { encoding: 'utf-8', timeout: 5000, windowsHide: true, shell: true });
+            } catch (e1) {
+                log('新协议启动异常 (忽略): ' + e1.message);
+                try {
+                    require('child_process').execSync('cmd /c start "" antigravity://', { encoding: 'utf-8', timeout: 5000, windowsHide: true, shell: true });
+                } catch (e2) {
+                    log('旧协议启动异常 (忽略): ' + e2.message);
+                }
+            }
+
+            // 同步等待 3 秒，给 IDE 进程启动时间
+            try {
+                require('child_process').execSync(
+                    PLATFORM === 'win32' ? 'ping -n 4 127.0.0.1 > nul' : 'sleep 3',
+                    { encoding: 'utf-8', windowsHide: true, timeout: 10000 }
+                );
+            } catch (waitErr) {}
+            
+            // 检测 Antigravity 进程是否已启动
+            if (isAntigravityRunning()) {
+                log('方法2 已成功启动 IDE');
+                return true;
             }
 
             log('Windows 上所有启动方法都失败了!');

@@ -67,3 +67,80 @@ export function removeField(data: Buffer, fieldNum: number): Buffer {
 
     return result;
 }
+
+export function getModelDisplayName(name: string): string {
+    if (!name) { return ''; }
+    const n = name.trim();
+    const lower = n.toLowerCase();
+
+    // Direct mapping dictionary for known models
+    const directMap: Record<string, string> = {
+        'gemini-3-flash': 'Gemini 3 Flash',
+        'gemini-3-flash-agent': 'Gemini 3 Flash (Agent)',
+        'gemini-3.1-flash-image': 'Gemini 3.1 Flash (Image)',
+        'gemini-3.1-flash-lite': 'Gemini 3.1 Flash (Lite)',
+        'gemini-3.1-pro-high': 'Gemini 3.1 Pro (High)',
+        'gemini-3.1-pro-low': 'Gemini 3.1 Pro (Low)',
+        'gemini-3.5-flash-low': 'Gemini 3.5 Flash (Low)',
+        'gemini-3.5-flash-medium': 'Gemini 3.5 Flash (Medium)',
+        'gemini-3.5-flash-high': 'Gemini 3.5 Flash (High)',
+        'gemini-pro-agent': 'Gemini Pro (Agent)',
+        'claude-sonnet-4.6': 'Claude Sonnet 4.6 (Thinking)',
+        'claude-opus-4.6': 'Claude Opus 4.6 (Thinking)',
+        'gpt-oss-120b-medium': 'GPT-OSS 120B (Medium)'
+    };
+
+    if (directMap[lower]) {
+        return directMap[lower];
+    }
+
+    let formatted = n;
+    if (lower.startsWith('gemini')) {
+        const parts = n.split('-');
+        const capParts = parts.map((part, idx) => {
+            if (idx === 0) { return 'Gemini'; }
+            if (part.toLowerCase() === 'pro') { return 'Pro'; }
+            if (part.toLowerCase() === 'flash') { return 'Flash'; }
+            if (part.toLowerCase() === 'agent') { return '(Agent)'; }
+            if (part.toLowerCase() === 'image') { return '(Image)'; }
+            if (part.toLowerCase() === 'lite') { return '(Lite)'; }
+            if (part.toLowerCase() === 'high') { return '(High)'; }
+            if (part.toLowerCase() === 'medium') { return '(Medium)'; }
+            if (part.toLowerCase() === 'low') { return '(Low)'; }
+            if (/^\d+(\.\d+)?$/.test(part)) { return part; }
+            return part.charAt(0).toUpperCase() + part.slice(1);
+        });
+        formatted = capParts.join(' ')
+            .replace(/\s+\(/g, ' (')
+            .replace(/\s+/g, ' ');
+    } else if (lower.startsWith('claude')) {
+        const parts = n.split('-');
+        const capParts = parts.map((part, idx) => {
+            if (idx === 0) { return 'Claude'; }
+            if (part.toLowerCase() === 'sonnet') { return 'Sonnet'; }
+            if (part.toLowerCase() === 'opus') { return 'Opus'; }
+            if (part.toLowerCase() === 'haiku') { return 'Haiku'; }
+            if (part.toLowerCase() === 'thinking') { return '(Thinking)'; }
+            if (/^\d+(\.\d+)?$/.test(part)) { return part; }
+            return part.charAt(0).toUpperCase() + part.slice(1);
+        });
+        formatted = capParts.join(' ')
+            .replace(/\s+\(/g, ' (')
+            .replace(/\s+/g, ' ');
+    } else if (lower.startsWith('gpt')) {
+        const parts = n.split('-');
+        const capParts = parts.map((part, idx) => {
+            if (idx === 0) { return 'GPT'; }
+            if (part.toUpperCase() === 'OSS') { return 'OSS'; }
+            if (part.toLowerCase() === 'medium') { return '(Medium)'; }
+            if (part.toLowerCase() === 'high') { return '(High)'; }
+            if (part.toLowerCase() === 'low') { return '(Low)'; }
+            if (/^\d+[a-zA-Z]*$/.test(part)) { return part.toUpperCase(); }
+            return part.charAt(0).toUpperCase() + part.slice(1);
+        });
+        formatted = capParts.join(' ')
+            .replace(/\s+\(/g, ' (')
+            .replace(/\s+/g, ' ');
+    }
+    return formatted;
+}
