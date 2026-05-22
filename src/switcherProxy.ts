@@ -512,15 +512,27 @@ async function injectToken() {
         
         // 1. 新格式注入
         try {
+            // Part A: oauthTokenInfoSentinelKey (The actual token)
             const oauthInfo = createOAuthInfo(ACCESS_TOKEN, REFRESH_TOKEN, EXPIRY);
             const oauthInfoB64 = oauthInfo.toString('base64');
             const inner2 = encodeStringField(1, oauthInfoB64);
             const inner1 = encodeStringField(1, "oauthTokenInfoSentinelKey");
             const inner = Buffer.concat([inner1, encodeLenDelim(2, inner2)]);
-            const outer = encodeLenDelim(1, inner);
-            const outerB64 = outer.toString('base64');
+            const outerToken = encodeLenDelim(1, inner);
             
-            db.run("INSERT OR REPLACE INTO ItemTable (key, value) VALUES (?, ?)", [KEY_NEW, outerB64]);
+            // Part B: authStateWithContextSentinelKey (The UI state to mark as signed in)
+            const stateInner1 = encodeStringField(1, "authStateWithContextSentinelKey");
+            const uiStateJson = '{"state":"signedIn","context":{"project":"","showProjectError":false,"errorMessage":"","ineligibleMessage":"","verificationUrl":"","isGcpTos":false,"browserOpenFailed":false,"appealUrl":"","appealLinkText":""}}';
+            const stateInner2Json = encodeStringField(1, uiStateJson);
+            const stateInner2 = encodeLenDelim(2, stateInner2Json);
+            const stateInner = Buffer.concat([stateInner1, stateInner2]);
+            const outerState = encodeLenDelim(1, stateInner);
+
+            // Combine both parts for the final payload
+            const finalPayload = Buffer.concat([outerState, outerToken]);
+            const finalB64 = finalPayload.toString('base64');
+            
+            db.run("INSERT OR REPLACE INTO ItemTable (key, value) VALUES (?, ?)", [KEY_NEW, finalB64]);
             log('新格式注入成功');
         } catch (e) {
             log('新格式注入异常: ' + e.message);
