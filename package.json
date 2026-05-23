@@ -1,6 +1,6 @@
 {
-  "name": "antigravity-mission-control",
-  "displayName": "Antigravity Mission Control",
+  "name": "ag-mission-hub-anbudev",
+  "displayName": "Antigravity Mission Hub (Anbudev)",
   "description": "%extension.description%",
   "version": "1.0.0",
   "publisher": "anbudev",
@@ -22,80 +22,80 @@
   "contributes": {
     "commands": [
       {
-        "command": "antigravity-mission-control.refreshAccounts",
+        "command": "antigravity-mission-hub.refreshAccounts",
         "title": "%command.refreshAccounts%",
         "icon": "$(refresh)"
       },
       {
-        "command": "antigravity-mission-control.switchAccount",
+        "command": "antigravity-mission-hub.switchAccount",
         "title": "%command.switchAccount%"
       },
       {
-        "command": "antigravity-mission-control.refreshAccount",
+        "command": "antigravity-mission-hub.refreshAccount",
         "title": "%command.refreshAccount%"
       },
       {
-        "command": "antigravity-mission-control.refreshAllAccounts",
+        "command": "antigravity-mission-hub.refreshAllAccounts",
         "title": "%command.refreshAllAccounts%"
       },
       {
-        "command": "antigravity-mission-control.openDashboard",
+        "command": "antigravity-mission-hub.openDashboard",
         "title": "%command.openDashboard%"
       },
       {
-        "command": "antigravity-mission-control.addAccount",
+        "command": "antigravity-mission-hub.addAccount",
         "title": "%command.addAccount%",
         "icon": "$(add)"
       },
       {
-        "command": "antigravity-mission-control.openSwitchLogs",
+        "command": "antigravity-mission-hub.openSwitchLogs",
         "title": "%command.openSwitchLogs%"
       },
       {
-        "command": "antigravity-mission-control.diagnoseEnvironment",
+        "command": "antigravity-mission-hub.diagnoseEnvironment",
         "title": "%command.diagnoseEnvironment%"
       },
       {
-        "command": "antigravity-mission-control.checkTerminalHealth",
+        "command": "antigravity-mission-hub.checkTerminalHealth",
         "title": "Antigravity: Check Terminal Health"
       },
       {
-        "command": "antigravity-mission-control.loginWithToken",
+        "command": "antigravity-mission-hub.loginWithToken",
         "title": "Antigravity: Login with Refresh Token",
         "icon": "$(key)"
       },
       {
-        "command": "antigravity-mission-control.exportToken",
+        "command": "antigravity-mission-hub.exportToken",
         "title": "Antigravity: Export Refresh Token",
         "icon": "$(export)"
       },
       {
-        "command": "antigravity-mission-control.batchExportTokens",
+        "command": "antigravity-mission-hub.batchExportTokens",
         "title": "Antigravity: Batch Export All Tokens",
         "icon": "$(export)"
       },
       {
-        "command": "antigravity-mission-control.batchImportTokens",
+        "command": "antigravity-mission-hub.batchImportTokens",
         "title": "Antigravity: Batch Import Tokens",
         "icon": "$(import)"
       },
       {
-        "command": "antigravity-mission-control.quickSwitch",
+        "command": "antigravity-mission-hub.quickSwitch",
         "title": "Antigravity: Quick Switch to Healthiest Account",
         "icon": "$(zap)"
       }
     ],
     "keybindings": [
       {
-        "command": "antigravity-mission-control.quickSwitch",
+        "command": "antigravity-mission-hub.quickSwitch",
         "key": "ctrl+shift+a",
         "mac": "cmd+shift+a"
       }
     ],
     "configuration": {
-      "title": "Antigravity Mission Control",
+      "title": "Antigravity Mission Hub",
       "properties": {
-        "antigravity-mission-control.switchMode": {
+        "antigravity-mission-hub.switchMode": {
           "type": "string",
           "enum": [
             "safe",
@@ -104,12 +104,12 @@
           "default": "advanced",
           "description": "%config.switchMode.description%"
         },
-        "antigravity-mission-control.databasePathOverride": {
+        "antigravity-mission-hub.databasePathOverride": {
           "type": "string",
           "default": "",
           "description": "%config.databasePathOverride.description%"
         },
-        "antigravity-mission-control.antigravityExecutablePath": {
+        "antigravity-mission-hub.antigravityExecutablePath": {
           "type": "object",
           "properties": {
             "win32": {
@@ -129,14 +129,14 @@
             }
           }
         },
-        "antigravity-mission-control.processWaitSeconds": {
+        "antigravity-mission-hub.processWaitSeconds": {
           "type": "integer",
           "default": 10,
           "minimum": 5,
           "maximum": 60,
           "description": "%config.processWaitSeconds.description%"
         },
-        "antigravity-mission-control.autoRefreshInterval": {
+        "antigravity-mission-hub.autoRefreshInterval": {
           "type": "integer",
           "default": 5,
           "enum": [

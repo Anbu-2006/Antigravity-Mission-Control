@@ -172,7 +172,7 @@ export interface Translations {
 }
 
 const en: Translations = {
-    welcomeMessage: '🚀 Antigravity Mission Control installed successfully! Check the UFO icon in the status bar.',
+    welcomeMessage: '🚀 Antigravity Mission Hub installed successfully! Check the UFO icon in the status bar.',
     openPanel: 'Open Panel',
     loading: 'Loading...',
     loadingTooltip: 'Loading Antigravity account information...',
@@ -226,7 +226,7 @@ const en: Translations = {
     configSaved: 'Group configuration saved',
     newGroup: 'New Group',
 
-    dashboardTitle: 'Antigravity Mission Control',
+    dashboardTitle: 'Antigravity Mission Hub',
     accountsTab: 'Accounts',
     groupingTab: 'Grouping',
     settingsTab: 'Settings',
@@ -299,7 +299,7 @@ const en: Translations = {
     batchImportProgress: 'Importing account {0}/{1}...',
     refreshingProgress: 'Refreshing account {0}/{1}, current: {2}',
 
-    envDiagnoseTitle: '## Antigravity Mission Control Environment Check Report\n',
+    envDiagnoseTitle: '## Antigravity Mission Hub Environment Check Report\n',
     envReportGenerated: 'Environment check report generated.',
     copyReport: 'Copy Report',
     reportCopied: 'Report copied to clipboard.',

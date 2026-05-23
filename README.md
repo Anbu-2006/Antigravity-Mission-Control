@@ -1,11 +1,11 @@
-# 🛡️ Antigravity Mission Control
+# 🛡️ Antigravity Mission Hub
 
-[![Version](https://img.shields.io/badge/version-1.0.0-blueviolet.svg?style=for-the-badge)](https://github.com/at2008/antigravity-mission-control)
+[![Version](https://img.shields.io/badge/version-1.0.0-blueviolet.svg?style=for-the-badge)](https://github.com/at2008/antigravity-mission-hub)
 [![VS Code](https://img.shields.io/badge/VS_Code-^1.95.0-blue.svg?style=for-the-badge&logo=visual-studio-code)](https://code.visualstudio.com)
-[![Platform](https://img.shields.io/badge/Platform-Windows%20%7C%20macOS%20%7C%20Linux-brightgreen.svg?style=for-the-badge)](https://github.com/at2008/antigravity-mission-control)
+[![Platform](https://img.shields.io/badge/Platform-Windows%20%7C%20macOS%20%7C%20Linux-brightgreen.svg?style=for-the-badge)](https://github.com/at2008/antigravity-mission-hub)
 [![License](https://img.shields.io/badge/License-MIT-orange.svg?style=for-the-badge)](https://opensource.org/licenses/MIT)
 
-> **Antigravity Mission Control** is a cyber-professional multi-account command center and AI token economy optimizer built specifically for the **Antigravity IDE**. Gain full observability into your active LLM subscriptions, route models intelligently, and switch active profiles seamlessly without interruption.
+> **Antigravity Mission Hub** is a cyber-professional multi-account command center and AI token economy optimizer built specifically for the **Antigravity IDE**. Gain full observability into your active LLM subscriptions, route models intelligently, and switch active profiles seamlessly without interruption.
 
 ---
 
@@ -55,10 +55,10 @@ Fine-tune extension behaviors directly via VS Code settings (`settings.json`):
 
 | Setting Key | Type | Default | Description |
 | :--- | :--- | :--- | :--- |
-| `antigravity-mission-control.switchMode` | `enum` | `"advanced"` | Switch method: `"advanced"` (automatic process kill and restart) or `"safe"` (graceful background injection). |
-| `antigravity-mission-control.autoRefreshInterval` | `integer` | `5` | Background telemetry polling interval in minutes (`0` to disable auto-refresh entirely). |
-| `antigravity-mission-control.processWaitSeconds` | `integer` | `10` | Waiting limit (in seconds) to let lingering IDE background tasks cleanly terminate during reload. |
-| `antigravity-mission-control.databasePathOverride` | `string` | `""` | Manual override path to the IDE sqlite db (`state.vscdb`). Leave blank for automated directory traversal. |
+| `antigravity-mission-hub.switchMode` | `enum` | `"advanced"` | Switch method: `"advanced"` (automatic process kill and restart) or `"safe"` (graceful background injection). |
+| `antigravity-mission-hub.autoRefreshInterval` | `integer` | `5` | Background telemetry polling interval in minutes (`0` to disable auto-refresh entirely). |
+| `antigravity-mission-hub.processWaitSeconds` | `integer` | `10` | Waiting limit (in seconds) to let lingering IDE background tasks cleanly terminate during reload. |
+| `antigravity-mission-hub.databasePathOverride` | `string` | `""` | Manual override path to the IDE sqlite db (`state.vscdb`). Leave blank for automated directory traversal. |
 
 ---
 
@@ -88,5 +88,5 @@ Package the extension locally to verify code changes or install manually:
 
 ## 📜 License
 
-This project is licensed under the MIT License. See [LICENSE](file:///E:/Antigravity/antigravity-mission-control/LICENSE) for details.
+This project is licensed under the MIT License. See [LICENSE](file:///E:/Antigravity/antigravity-mission-hub/LICENSE) for details.
 

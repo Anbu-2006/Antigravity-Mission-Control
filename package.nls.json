@@ -4,7 +4,7 @@
     "command.switchAccount": "Switch Account",
     "command.refreshAccount": "Refresh This Account",
     "command.refreshAllAccounts": "Refresh All Accounts",
-    "command.openDashboard": "Open Mission Control Dashboard",
+    "command.openDashboard": "Open Mission Hub Dashboard",
     "command.addAccount": "Add Account",
     "command.openSwitchLogs": "Antigravity: Open Account Switching Logs",
     "command.diagnoseEnvironment": "Antigravity: Environment Diagnosis",

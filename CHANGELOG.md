@@ -1,6 +1,6 @@
 # Changelog
 
-All notable changes to the **Antigravity Mission Control** extension will be documented in this file.
+All notable changes to the **Antigravity Mission Hub** extension will be documented in this file.
 
 ---
 

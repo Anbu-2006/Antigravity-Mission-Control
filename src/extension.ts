@@ -52,7 +52,7 @@ export function activate(context: vscode.ExtensionContext) {
     migrateDataDir();
 
     const getConfiguredDbPath = () => {
-        const config = vscode.workspace.getConfiguration('antigravity-mission-control');
+        const config = vscode.workspace.getConfiguration('antigravity-mission-hub');
         return getVSCDBPath(config.get<string>('databasePathOverride', ''));
     };
 
@@ -66,7 +66,7 @@ export function activate(context: vscode.ExtensionContext) {
             t('openPanel')
         ).then(selection => {
             if (selection === t('openPanel')) {
-                vscode.commands.executeCommand('antigravity-mission-control.openDashboard');
+                vscode.commands.executeCommand('antigravity-mission-hub.openDashboard');
             }
         });
         context.globalState.update('hasShownWelcome', true);
@@ -149,7 +149,7 @@ temp/
 
     // --- Status Bar Section ---
     const statusBarItem = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Right, 10000);
-    statusBarItem.command = 'antigravity-mission-control.openDashboard';
+    statusBarItem.command = 'antigravity-mission-hub.openDashboard';
     context.subscriptions.push(statusBarItem);
 
     // 立即显示状态栏（初始状态）
@@ -400,7 +400,7 @@ temp/
                     t('openPanel')
                 ).then(selection => {
                     if (selection === t('openPanel')) {
-                        vscode.commands.executeCommand('antigravity-mission-control.openDashboard');
+                        vscode.commands.executeCommand('antigravity-mission-hub.openDashboard');
                     }
                 });
 
@@ -421,7 +421,7 @@ temp/
         if (tlsBlocked) {
             statusBarItem.text = `$(shield) Network Blocked`;
             statusBarItem.tooltip = '⚠️ VPN/Proxy is blocking AI connections. Use "Refresh All" to retry after disabling SSL-Inspection.';
-            statusBarItem.command = 'antigravity-mission-control.openDashboard';
+            statusBarItem.command = 'antigravity-mission-hub.openDashboard';
             statusBarItem.show();
             return;
         }
@@ -491,7 +491,7 @@ temp/
 
             // --- Auto-Rotate Check ---
             // When autoRotate is enabled and any model drops below 10%, suggest switching
-            const autoRotateEnabled = vscode.workspace.getConfiguration('antigravity-mission-control').get<boolean>('autoRotate', true);
+            const autoRotateEnabled = vscode.workspace.getConfiguration('antigravity-mission-hub').get<boolean>('autoRotate', true);
             if (autoRotateEnabled && !quota.is_error && !quota.is_forbidden && quota.models) {
                 const lowModels = quota.models.filter((m: any) => m.percentage < 10);
                 if (lowModels.length > 0) {
@@ -529,7 +529,7 @@ temp/
                                 'Switch Now', 'Dismiss'
                             );
                             if (choice === 'Switch Now') {
-                                vscode.commands.executeCommand('antigravity-mission-control.switchAccount', {
+                                vscode.commands.executeCommand('antigravity-mission-hub.switchAccount', {
                                     accountId: bestAlt.id,
                                     email: bestAlt.email
                                 });
@@ -548,11 +548,11 @@ temp/
                 const errorTooltip = new vscode.MarkdownString();
                 errorTooltip.isTrusted = true;
                 errorTooltip.supportHtml = true;
-                errorTooltip.appendMarkdown(`🛡️ **Antigravity Mission Control**\n\n`);
+                errorTooltip.appendMarkdown(`🛡️ **Antigravity Mission Hub**\n\n`);
                 errorTooltip.appendMarkdown(`⚠️ ${t('quotaFetchError')}: ${errText}\n\n`);
                 errorTooltip.appendMarkdown(`*${t('quotaRetryHint')}*\n`);
                 statusBarItem.tooltip = errorTooltip;
-                statusBarItem.command = 'antigravity-mission-control.openDashboard';
+                statusBarItem.command = 'antigravity-mission-hub.openDashboard';
                 statusBarItem.show();
                 return;
             }
@@ -595,7 +595,7 @@ temp/
             tooltip.isTrusted = true;
             tooltip.supportHtml = true;
 
-            tooltip.appendMarkdown(`🛡️ **Antigravity Mission Control**\n\n`);
+            tooltip.appendMarkdown(`🛡️ **Antigravity Mission Hub**\n\n`);
 
 
             if (!quota.is_forbidden) {
@@ -689,7 +689,7 @@ temp/
             }
 
             statusBarItem.tooltip = tooltip;
-            statusBarItem.command = 'antigravity-mission-control.openDashboard';
+            statusBarItem.command = 'antigravity-mission-hub.openDashboard';
             statusBarItem.show();
 
             // 连接成功，重置错误状态
@@ -704,7 +704,7 @@ temp/
                 tlsBlocked = true;
                 statusBarItem.text = `$(shield) Network Blocked`;
                 statusBarItem.tooltip = '⚠️ VPN/Proxy is blocking AI connections. Use "Refresh All" to retry after disabling SSL-Inspection.';
-                statusBarItem.command = 'antigravity-mission-control.openDashboard';
+                statusBarItem.command = 'antigravity-mission-hub.openDashboard';
                 statusBarItem.show();
                 vscode.window.showErrorMessage("⚠️ Network Block Detected: Your VPN/Proxy is blocking the AI connection. Please disable SSL-Inspection or set 'http.proxyStrictSSL' to false. Use 'Refresh All' to retry.");
                 return;
@@ -724,12 +724,12 @@ temp/
             statusBarItem.tooltip = errorTooltip;
 
             // 关键修复：错误状态下点击打开面板，而非僵死在 reconnect
-            statusBarItem.command = 'antigravity-mission-control.openDashboard';
+            statusBarItem.command = 'antigravity-mission-hub.openDashboard';
             statusBarItem.show();
 
             // 避免频繁通知：使用配置的刷新间隔作为通知间隔
             const now = Date.now();
-            const notifyConfig = vscode.workspace.getConfiguration('antigravity-mission-control'); const notifyIntervalMs = (notifyConfig.get<number>('autoRefreshInterval', 5)) * 60 * 1000;
+            const notifyConfig = vscode.workspace.getConfiguration('antigravity-mission-hub'); const notifyIntervalMs = (notifyConfig.get<number>('autoRefreshInterval', 5)) * 60 * 1000;
             const shouldNotify = !lastConnectionError || (now - lastNotificationTime > notifyIntervalMs);
 
             if (shouldNotify) {
@@ -746,7 +746,7 @@ temp/
                     if (selection === t('reconnect')) {
                         updateStatusBar();
                     } else if (selection === t('openPanel')) {
-                        vscode.commands.executeCommand('antigravity-mission-control.openDashboard');
+                        vscode.commands.executeCommand('antigravity-mission-hub.openDashboard');
                     }
                 });
             }
@@ -786,13 +786,13 @@ temp/
     };
 
     // 注册刷新状态栏命令 (供分组管理等功能调用)
-    let refreshStatusBarCommand = vscode.commands.registerCommand('antigravity-mission-control.refreshStatusBar', () => {
+    let refreshStatusBarCommand = vscode.commands.registerCommand('antigravity-mission-hub.refreshStatusBar', () => {
         updateStatusBar();
     });
     context.subscriptions.push(refreshStatusBarCommand);
 
     // 注册重新连接命令
-    let reconnectCommand = vscode.commands.registerCommand('antigravity-mission-control.reconnect', async () => {
+    let reconnectCommand = vscode.commands.registerCommand('antigravity-mission-hub.reconnect', async () => {
         vscode.window.showInformationMessage(t('reconnecting'));
         try {
             await updateStatusBar();
@@ -902,7 +902,7 @@ temp/
         }
 
         // 读取配置
-        const config = vscode.workspace.getConfiguration('antigravity-mission-control');
+        const config = vscode.workspace.getConfiguration('antigravity-mission-hub');
         const intervalMinutes = config.get<number>('autoRefreshInterval', 5);
 
         if (intervalMinutes > 0) {
@@ -916,11 +916,11 @@ temp/
                 // 先检测 IDE 账号是否变更，再刷新状态栏
                 const changed = await syncWithIdeAccount();
                 // Execute a full refresh of all accounts
-                await vscode.commands.executeCommand('antigravity-mission-control.refreshAllAccounts');
+                await vscode.commands.executeCommand('antigravity-mission-hub.refreshAllAccounts');
             }, intervalMs);
-            console.log(`Antigravity Mission Control: 自动刷新已启用，间隔 ${intervalMinutes} 分钟`);
+            console.log(`Antigravity Mission Hub: 自动刷新已启用，间隔 ${intervalMinutes} 分钟`);
         } else {
-            console.log('Antigravity Mission Control: 自动刷新已禁用');
+            console.log('Antigravity Mission Hub: 自动刷新已禁用');
         }
     }
 
@@ -996,7 +996,7 @@ temp/
     // 监听配置变化
     context.subscriptions.push(
         vscode.workspace.onDidChangeConfiguration(e => {
-            if (e.affectsConfiguration('antigravity-mission-control.autoRefreshInterval')) {
+            if (e.affectsConfiguration('antigravity-mission-hub.autoRefreshInterval')) {
                 setupAutoRefresh();
                 vscode.window.showInformationMessage(t('autoRefreshUpdated'));
             }
@@ -1021,13 +1021,13 @@ temp/
         }
     });
 
-    let refreshCommand = vscode.commands.registerCommand('antigravity-mission-control.refreshAccounts', () => {
+    let refreshCommand = vscode.commands.registerCommand('antigravity-mission-hub.refreshAccounts', () => {
         accountTreeProvider.refresh();
     });
 
 
 
-    let addAccountCommand = vscode.commands.registerCommand('antigravity-mission-control.addAccount', async () => {
+    let addAccountCommand = vscode.commands.registerCommand('antigravity-mission-hub.addAccount', async () => {
         try {
             const tokenInfo = await performOAuth();
             if (tokenInfo) {
@@ -1084,11 +1084,11 @@ temp/
         }
     });
 
-    let switchAccountCommand = vscode.commands.registerCommand('antigravity-mission-control.switchAccount', async (item: any) => {
+    let switchAccountCommand = vscode.commands.registerCommand('antigravity-mission-hub.switchAccount', async (item: any) => {
         const accountId = item.accountId;
         if (!accountId) { return; }
 
-        const config = vscode.workspace.getConfiguration('antigravity-mission-control');
+        const config = vscode.workspace.getConfiguration('antigravity-mission-hub');
         const switchMode = config.get<string>('switchMode', 'advanced');
 
         const message =
@@ -1240,7 +1240,7 @@ temp/
         });
     });
 
-    let openDashboardCommand = vscode.commands.registerCommand('antigravity-mission-control.openDashboard', async () => {
+    let openDashboardCommand = vscode.commands.registerCommand('antigravity-mission-hub.openDashboard', async () => {
         // Phase 0: 立即打开面板（使用本地缓存数据渲染，0 延迟）
         DashboardProvider.createOrShow(context.extensionUri);
 
@@ -1255,7 +1255,7 @@ temp/
         updateStatusBar();
     });
 
-    let refreshAccountCommand = vscode.commands.registerCommand('antigravity-mission-control.refreshAccount', async (accountId: string, silent: boolean = false) => {
+    let refreshAccountCommand = vscode.commands.registerCommand('antigravity-mission-hub.refreshAccount', async (accountId: string, silent: boolean = false) => {
         try {
             await syncWithIdeAccount(); // 刷新前先主动侦测一次账号表更
             const account = AccountManager.loadAccount(accountId);
@@ -1286,7 +1286,7 @@ temp/
         }
     });
 
-    let deleteAccountCommand = vscode.commands.registerCommand('antigravity-mission-control.deleteAccount', async (item: any) => {
+    let deleteAccountCommand = vscode.commands.registerCommand('antigravity-mission-hub.deleteAccount', async (item: any) => {
         const accountId = item.accountId;
         const email = item.email || '未命名账号';
 
@@ -1314,7 +1314,7 @@ temp/
         }
     });
 
-    let refreshAllAccountsCommand = vscode.commands.registerCommand('antigravity-mission-control.refreshAllAccounts', async () => {
+    let refreshAllAccountsCommand = vscode.commands.registerCommand('antigravity-mission-hub.refreshAllAccounts', async () => {
         await vscode.window.withProgress({
             location: vscode.ProgressLocation.Notification,
             title: t('loading'),
@@ -1367,7 +1367,7 @@ temp/
     });
 
     // --- Token 登录命令 ---
-    let loginWithTokenCommand = vscode.commands.registerCommand('antigravity-mission-control.loginWithToken', async (refreshTokenArg?: string) => {
+    let loginWithTokenCommand = vscode.commands.registerCommand('antigravity-mission-hub.loginWithToken', async (refreshTokenArg?: string) => {
         try {
             // 支持从 Dashboard 传入 token，或弹出输入框让用户手动输入
             let refreshTokenInput = refreshTokenArg;
@@ -1458,7 +1458,7 @@ temp/
     context.subscriptions.push(loginWithTokenCommand);
 
     // --- 导出 Token 命令 ---
-    let exportTokenCommand = vscode.commands.registerCommand('antigravity-mission-control.exportToken', async (accountId?: string) => {
+    let exportTokenCommand = vscode.commands.registerCommand('antigravity-mission-hub.exportToken', async (accountId?: string) => {
         try {
             // 如果未传入 accountId，使用当前活跃账号
             if (!accountId) {
@@ -1495,7 +1495,7 @@ temp/
     context.subscriptions.push(exportTokenCommand);
 
     // --- 批量导出 Token 命令 ---
-    let batchExportCommand = vscode.commands.registerCommand('antigravity-mission-control.batchExportTokens', async () => {
+    let batchExportCommand = vscode.commands.registerCommand('antigravity-mission-hub.batchExportTokens', async () => {
         try {
             const index = AccountManager.loadIndex();
             const exportData: { version: number; accounts: { email: string; refresh_token: string }[] } = {
@@ -1540,7 +1540,7 @@ temp/
     context.subscriptions.push(batchExportCommand);
 
     // --- 批量导入 Token 命令 ---
-    let batchImportCommand = vscode.commands.registerCommand('antigravity-mission-control.batchImportTokens', async (jsonText?: string) => {
+    let batchImportCommand = vscode.commands.registerCommand('antigravity-mission-hub.batchImportTokens', async (jsonText?: string) => {
         try {
             // 支持从 Dashboard 传入 JSON，或弹出输入框
             let input = jsonText;
@@ -1665,7 +1665,7 @@ temp/
     context.subscriptions.push(batchImportCommand);
 
     // 打开外部切换代理日志目录（ag_switch_*.log 所在的临时目录）
-    let openSwitchLogsCommand = vscode.commands.registerCommand('antigravity-mission-control.openSwitchLogs', async () => {
+    let openSwitchLogsCommand = vscode.commands.registerCommand('antigravity-mission-hub.openSwitchLogs', async () => {
         const tempDir = os.tmpdir();
         const uri = vscode.Uri.file(tempDir);
         await vscode.env.openExternal(uri);
@@ -1673,12 +1673,12 @@ temp/
     });
 
     // 环境自检命令
-    let diagnoseEnvironmentCommand = vscode.commands.registerCommand('antigravity-mission-control.diagnoseEnvironment', async () => {
+    let diagnoseEnvironmentCommand = vscode.commands.registerCommand('antigravity-mission-hub.diagnoseEnvironment', async () => {
         const { execSync } = require('child_process');
         const fs = require('fs');
         const path = require('path');
         const platform = os.platform();
-        const config = vscode.workspace.getConfiguration('antigravity-mission-control');
+        const config = vscode.workspace.getConfiguration('antigravity-mission-hub');
 
         const results: string[] = [];
         results.push(t('envDiagnoseTitle'));
@@ -1868,7 +1868,7 @@ temp/
     });
 
     // --- Quick Switch to Healthiest Account (Ctrl+Shift+A) ---
-    let quickSwitchCommand = vscode.commands.registerCommand('antigravity-mission-control.quickSwitch', async () => {
+    let quickSwitchCommand = vscode.commands.registerCommand('antigravity-mission-hub.quickSwitch', async () => {
         try {
             const index = AccountManager.loadIndex();
             if (!index || !index.accounts || index.accounts.length === 0) {
@@ -1912,7 +1912,7 @@ temp/
             );
 
             if (choice === 'Switch Now') {
-                vscode.commands.executeCommand('antigravity-mission-control.switchAccount', {
+                vscode.commands.executeCommand('antigravity-mission-hub.switchAccount', {
                     accountId: bestAccount.id,
                     email: bestAccount.email
                 });
@@ -1938,7 +1938,7 @@ temp/
     );
 
     // 3. Terminal Stream Integrity Check
-    let checkTerminalHealthCommand = vscode.commands.registerCommand('antigravity-mission-control.checkTerminalHealth', () => {
+    let checkTerminalHealthCommand = vscode.commands.registerCommand('antigravity-mission-hub.checkTerminalHealth', () => {
         let issuesFound = false;
         let checkedFiles: string[] = [];
         
@@ -2017,8 +2017,8 @@ temp/
                         if (process.platform === 'win32' && !process.env.HOME) {
                             statusBarItem.backgroundColor = new vscode.ThemeColor('statusBarItem.errorBackground');
                             statusBarItem.text = `$(warning) Terminal Blindness Risk`;
-                            statusBarItem.tooltip = `⚠️ Terminal Blindness Risk: IDE launched via shortcut. Restart via Mission Control to enable Browser Subagent.`;
-                            vscode.window.showWarningMessage("⚠️ Terminal Blindness Risk: IDE launched via shortcut. Restart via Mission Control to enable Browser Subagent.");
+                            statusBarItem.tooltip = `⚠️ Terminal Blindness Risk: IDE launched via shortcut. Restart via Mission Hub to enable Browser Subagent.`;
+                            vscode.window.showWarningMessage("⚠️ Terminal Blindness Risk: IDE launched via shortcut. Restart via Mission Hub to enable Browser Subagent.");
                         }
 
                         // === HANDSHAKE GUARD ===

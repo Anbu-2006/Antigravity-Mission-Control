@@ -252,11 +252,11 @@ export class SwitcherProxy {
             : getVSCDBPath();
 
         // Define modal commands outside the template literal to avoid quote escaping syntax errors when written to JS
-        const showWinModalCmd = 'powershell -WindowStyle Hidden -Command "Add-Type -AssemblyName System.Windows.Forms; [System.Windows.Forms.MessageBox]::Show(\'Critical Lock Error: Antigravity IDE is still being held by a background process. Please open Task Manager, kill all Antigravity.exe or Antigravity IDE.exe processes, and try again.\', \'Antigravity Mission Control\', \'OK\', \'Error\')"';
+        const showWinModalCmd = 'powershell -WindowStyle Hidden -Command "Add-Type -AssemblyName System.Windows.Forms; [System.Windows.Forms.MessageBox]::Show(\'Critical Lock Error: Antigravity IDE is still being held by a background process. Please open Task Manager, kill all Antigravity.exe or Antigravity IDE.exe processes, and try again.\', \'Antigravity Mission Hub\', \'OK\', \'Error\')"';
 
-        const showMacModalCmd = "osascript -e 'display dialog \"Critical Lock Error: Antigravity IDE is still being held by a background process. Please open Activity Monitor, force quit Antigravity IDE, and try again.\" buttons {\"OK\"} default button \"OK\" with icon stop with title \"Antigravity Mission Control\"'";
+        const showMacModalCmd = "osascript -e 'display dialog \"Critical Lock Error: Antigravity IDE is still being held by a background process. Please open Activity Monitor, force quit Antigravity IDE, and try again.\" buttons {\"OK\"} default button \"OK\" with icon stop with title \"Antigravity Mission Hub\"'";
 
-        const showLinuxModalCmd = 'zenity --error --title="Antigravity Mission Control" --text="Critical Lock Error: Antigravity IDE is still being held by a background process. Please kill all Antigravity processes and try again."';
+        const showLinuxModalCmd = 'zenity --error --title="Antigravity Mission Hub" --text="Critical Lock Error: Antigravity IDE is still being held by a background process. Please kill all Antigravity processes and try again."';
 
         // 生成跨平台的独立 Node.js 脚本
         const mainScriptContent = `
@@ -802,7 +802,7 @@ function startIDE() {
 // === 主流程 ===
 async function main() {
     log('========================================');
-    log('Antigravity Mission Control 账号切换代理启动');
+    log('Antigravity Mission Hub 账号切换代理启动');
     log('平台: ' + PLATFORM);
     log('数据库: ' + DB_PATH);
     log('========================================');

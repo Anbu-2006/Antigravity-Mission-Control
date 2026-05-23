@@ -29,7 +29,7 @@ export class DashboardProvider {
 
         const panel = vscode.window.createWebviewPanel(
             DashboardProvider.viewType,
-            'Antigravity Mission Control',
+            'Antigravity Mission Hub',
             column || vscode.ViewColumn.One,
             {
                 enableScripts: true,
@@ -78,7 +78,7 @@ export class DashboardProvider {
 
         // 监听配置变化（特别是语言切换），实时刷新界面以应用新翻译
         vscode.workspace.onDidChangeConfiguration(e => {
-            if (e.affectsConfiguration('antigravity-mission-control.language')) {
+            if (e.affectsConfiguration('antigravity-mission-hub.language')) {
                 this._update();
             }
         }, null, this._disposables);
@@ -88,19 +88,19 @@ export class DashboardProvider {
                 try {
                     switch (message.command) {
                         case 'switch':
-                            await vscode.commands.executeCommand('antigravity-mission-control.switchAccount', { accountId: message.accountId, email: message.email });
+                            await vscode.commands.executeCommand('antigravity-mission-hub.switchAccount', { accountId: message.accountId, email: message.email });
                             this._update();
                             return;
                         case 'refresh':
-                            await vscode.commands.executeCommand('antigravity-mission-control.refreshAccount', message.accountId, message.silent);
+                            await vscode.commands.executeCommand('antigravity-mission-hub.refreshAccount', message.accountId, message.silent);
                             this._update();
                             return;
                         case 'refreshAll':
-                            await vscode.commands.executeCommand('antigravity-mission-control.refreshAllAccounts');
+                            await vscode.commands.executeCommand('antigravity-mission-hub.refreshAllAccounts');
                             this._update();
                             return;
                         case 'addAccount':
-                            await vscode.commands.executeCommand('antigravity-mission-control.addAccount');
+                            await vscode.commands.executeCommand('antigravity-mission-hub.addAccount');
                             this._update();
                             return;
 
@@ -152,21 +152,21 @@ export class DashboardProvider {
                             return;
                         }
                         case 'loginWithToken':
-                            await vscode.commands.executeCommand('antigravity-mission-control.loginWithToken', message.token);
+                            await vscode.commands.executeCommand('antigravity-mission-hub.loginWithToken', message.token);
                             this._update();
                             return;
                         case 'exportToken':
-                            await vscode.commands.executeCommand('antigravity-mission-control.exportToken', message.accountId);
+                            await vscode.commands.executeCommand('antigravity-mission-hub.exportToken', message.accountId);
                             return;
                         case 'batchExportTokens':
-                            await vscode.commands.executeCommand('antigravity-mission-control.batchExportTokens');
+                            await vscode.commands.executeCommand('antigravity-mission-hub.batchExportTokens');
                             return;
                         case 'batchImportTokens':
-                            await vscode.commands.executeCommand('antigravity-mission-control.batchImportTokens', message.jsonText);
+                            await vscode.commands.executeCommand('antigravity-mission-hub.batchImportTokens', message.jsonText);
                             this._update();
                             return;
                         case 'delete':
-                            await vscode.commands.executeCommand('antigravity-mission-control.deleteAccount', { accountId: message.accountId, email: message.email });
+                            await vscode.commands.executeCommand('antigravity-mission-hub.deleteAccount', { accountId: message.accountId, email: message.email });
                             return;
 
                         // === 分组管理相关命令 ===
@@ -191,7 +191,7 @@ export class DashboardProvider {
                                 command: 'groupsConfig',
                                 config: autoConfig
                             });
-                            vscode.commands.executeCommand('antigravity-mission-control.refreshStatusBar');
+                            vscode.commands.executeCommand('antigravity-mission-hub.refreshStatusBar');
                             vscode.window.showInformationMessage(`已自动创建 ${autoGroups.length} 个分组`);
                             return;
 
@@ -254,13 +254,13 @@ export class DashboardProvider {
                         case 'saveGroups':
                             // 直接保存完整分组配置
                             ModelGroupManager.saveGroups(message.config);
-                            vscode.commands.executeCommand('antigravity-mission-control.refreshStatusBar');
+                            vscode.commands.executeCommand('antigravity-mission-hub.refreshStatusBar');
                             vscode.window.showInformationMessage(t('configSaved'));
                             return;
 
                         case 'updateAutoRefreshInterval':
                             // Update the global configuration which triggers setupAutoRefresh in extension.ts
-                            vscode.workspace.getConfiguration('antigravity-mission-control').update('autoRefreshInterval', parseInt(message.interval), vscode.ConfigurationTarget.Global);
+                            vscode.workspace.getConfiguration('antigravity-mission-hub').update('autoRefreshInterval', parseInt(message.interval), vscode.ConfigurationTarget.Global);
                             return;
 
 
@@ -405,7 +405,7 @@ export class DashboardProvider {
                         } catch (e: any) {
                             if (e.response && e.response.status === 401) {
                                 // 发现 401 自动触发状态栏的刷新逻辑（含 Token 自动刷新）
-                                vscode.commands.executeCommand('antigravity-mission-control.refreshStatusBar');
+                                vscode.commands.executeCommand('antigravity-mission-hub.refreshStatusBar');
                             }
                         }
                     } else {
@@ -454,7 +454,7 @@ export class DashboardProvider {
     }
 
     private _getHtmlForWebview(accountsData: any[], groupsConfig: any, uiState: any = {}) {
-        const config = vscode.workspace.getConfiguration('antigravity-mission-control');
+        const config = vscode.workspace.getConfiguration('antigravity-mission-hub');
         const autoRefreshInterval = config.get<number>('autoRefreshInterval', 5);
         const accountsJson = JSON.stringify(accountsData);
         const groupsJson = JSON.stringify(groupsConfig);
@@ -476,7 +476,7 @@ export class DashboardProvider {
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Anbudev Mission Control</title>
+<title>Anbudev Mission Hub</title>
 <style>
 @import url('https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700;900&family=Inter:wght@400;600;800&display=swap');
 *{margin:0;padding:0;box-sizing:border-box}
@@ -635,7 +635,7 @@ body{font-family:'Inter',sans-serif;background:#05070a;color:#cbd5e1;overflow:hi
 <body>
 <div class="cockpit">
     <div class="nav">
-        <div class="nav-brand"><div class="logo-shield"></div>ANTIGRAVITY MISSION CONTROL</div>
+        <div class="nav-brand"><div class="logo-shield"></div>ANTIGRAVITY MISSION HUB</div>
         <div class="nav-actions">
             <button class="nav-btn" onclick="doAdd()"><span class="icon">+</span> Add Account</button>
             <button class="nav-btn" onclick="openTokenModal()"><span class="icon">🔑</span> Token</button>
