@@ -9,6 +9,15 @@
 
 ---
 
+## 📥 Installation
+
+**Antigravity Mission Hub** is officially published and available for download on both major extension registries:
+
+- 🔵 **[Microsoft VS Code Marketplace](https://marketplace.visualstudio.com/items?itemName=anbudev.ag-mission-hub-anbudev)** (For standard Visual Studio Code users)
+- 🟣 **[Open VSX Registry](https://open-vsx.org/extension/anbudev/ag-mission-hub-anbudev)** (For Antigravity IDE, VSCodium, Gitpod, and Eclipse Theia users)
+
+---
+
 ## 🌟 Core Architecture & Key Capabilities
 
 ### 1. 📊 Advanced Telemetry & Glassmorphism Dashboard
