@@ -3,6 +3,12 @@ import * as path from 'path';
 import * as os from 'os';
 import { spawn, execSync } from 'child_process';
 import { getVSCDBPath } from './constants';
+export interface NodeResolution {
+    path: string;
+    isBundled: boolean;
+    source: string;
+}
+
 export interface EnvironmentCheckResult {
     success: boolean;
     nodeJs: { ok: boolean; path?: string; error?: string };
@@ -13,6 +19,155 @@ export interface EnvironmentCheckResult {
 }
 
 export class SwitcherProxy {
+    /**
+     * Comprehensive multi-strategy Node.js resolution across Windows, macOS, and Linux
+     * Supports PATH, login shell environments, Homebrew, NVM, Volta, FNM, ASDF, Scoop, Chocolatey,
+     * and seamlessly falls back to the IDE's bundled Electron Node runtime (ELECTRON_RUN_AS_NODE=1).
+     */
+    static findNodeExecutable(): NodeResolution {
+        const platform = os.platform();
+
+        // Strategy 1: Check system PATH
+        try {
+            const cmd = platform === 'win32' ? 'where.exe node' : 'which node';
+            const out = execSync(cmd, { encoding: 'utf-8', windowsHide: true, timeout: 3000 }).trim();
+            const first = out.split(/\r?\n/)[0].trim();
+            if (first && fs.existsSync(first)) {
+                return { path: first, isBundled: false, source: 'System PATH' };
+            }
+        } catch (e) { }
+
+        // Strategy 2: macOS / Linux Login Shell (loads .zshrc, .bash_profile where Homebrew / NVM are exported)
+        if (platform === 'darwin' || platform === 'linux') {
+            try {
+                const shell = process.env.SHELL || (platform === 'darwin' ? '/bin/zsh' : '/bin/bash');
+                const out = execSync(`"${shell}" -ilc "which node" 2>/dev/null`, {
+                    encoding: 'utf-8',
+                    timeout: 3000,
+                    stdio: ['ignore', 'pipe', 'ignore']
+                }).trim();
+                const first = out.split(/\r?\n/)[0].trim();
+                if (first && fs.existsSync(first)) {
+                    return { path: first, isBundled: false, source: 'Login Shell' };
+                }
+            } catch (e) { }
+        }
+
+        // Strategy 3: Standard macOS paths
+        if (platform === 'darwin') {
+            const macPaths = [
+                '/opt/homebrew/bin/node',     // Homebrew Apple Silicon (M1/M2/M3/M4)
+                '/usr/local/bin/node',        // Homebrew Intel / Official Node.js PKG
+                '/opt/local/bin/node'         // MacPorts
+            ];
+            for (const p of macPaths) {
+                if (fs.existsSync(p)) {
+                    return { path: p, isBundled: false, source: 'Homebrew / System' };
+                }
+            }
+
+            // NVM on macOS
+            const nvmDir = path.join(os.homedir(), '.nvm', 'versions', 'node');
+            if (fs.existsSync(nvmDir)) {
+                try {
+                    const versions = fs.readdirSync(nvmDir).filter(v => v.startsWith('v')).sort().reverse();
+                    for (const v of versions) {
+                        const candidate = path.join(nvmDir, v, 'bin', 'node');
+                        if (fs.existsSync(candidate)) {
+                            return { path: candidate, isBundled: false, source: `NVM (${v})` };
+                        }
+                    }
+                } catch (e) { }
+            }
+
+            // FNM / Volta / ASDF on macOS
+            const versionManagers = [
+                path.join(os.homedir(), '.local', 'share', 'fnm', 'current', 'bin', 'node'),
+                path.join(os.homedir(), '.fnm', 'current', 'bin', 'node'),
+                path.join(os.homedir(), '.volta', 'bin', 'node'),
+                path.join(os.homedir(), '.asdf', 'shims', 'node')
+            ];
+            for (const p of versionManagers) {
+                if (fs.existsSync(p)) {
+                    return { path: p, isBundled: false, source: 'Version Manager' };
+                }
+            }
+        }
+
+        // Strategy 4: Standard Windows paths
+        if (platform === 'win32') {
+            const winPaths = [
+                path.join(process.env.PROGRAMFILES || 'C:\\Program Files', 'nodejs', 'node.exe'),
+                path.join(process.env['PROGRAMFILES(X86)'] || 'C:\\Program Files (x86)', 'nodejs', 'node.exe'),
+                path.join(process.env.LOCALAPPDATA || '', 'Programs', 'nodejs', 'node.exe'),
+                path.join(process.env.APPDATA || '', 'npm', 'node.exe'),
+                'C:\\Program Files\\nodejs\\node.exe',
+                'C:\\Program Files (x86)\\nodejs\\node.exe',
+                'C:\\nodejs\\node.exe',
+                path.join(process.env.USERPROFILE || '', 'scoop', 'apps', 'nodejs', 'current', 'node.exe'),
+                'C:\\ProgramData\\chocolatey\\bin\\node.exe',
+                path.join(process.env.LOCALAPPDATA || '', 'Volta', 'bin', 'node.exe'),
+            ];
+            for (const p of winPaths) {
+                if (fs.existsSync(p)) {
+                    return { path: p, isBundled: false, source: 'Windows Program Files' };
+                }
+            }
+
+            // NVM for Windows
+            const nvmDir = process.env.NVM_HOME || path.join(process.env.APPDATA || '', 'nvm');
+            if (fs.existsSync(nvmDir)) {
+                const symlink = path.join(process.env.NVM_SYMLINK || 'C:\\Program Files\\nodejs', 'node.exe');
+                if (fs.existsSync(symlink)) {
+                    return { path: symlink, isBundled: false, source: 'NVM Windows' };
+                }
+                try {
+                    const versions = fs.readdirSync(nvmDir).filter(v => v.startsWith('v')).sort().reverse();
+                    for (const v of versions) {
+                        const candidate = path.join(nvmDir, v, 'node.exe');
+                        if (fs.existsSync(candidate)) {
+                            return { path: candidate, isBundled: false, source: `NVM (${v})` };
+                        }
+                    }
+                } catch (e) { }
+            }
+        }
+
+        // Strategy 5: Standard Linux paths
+        if (platform === 'linux') {
+            const linuxPaths = [
+                '/usr/bin/node',
+                '/usr/local/bin/node',
+                '/snap/bin/node'
+            ];
+            for (const p of linuxPaths) {
+                if (fs.existsSync(p)) {
+                    return { path: p, isBundled: false, source: 'Linux System' };
+                }
+            }
+            // NVM on Linux
+            const nvmDir = path.join(os.homedir(), '.nvm', 'versions', 'node');
+            if (fs.existsSync(nvmDir)) {
+                try {
+                    const versions = fs.readdirSync(nvmDir).filter(v => v.startsWith('v')).sort().reverse();
+                    for (const v of versions) {
+                        const candidate = path.join(nvmDir, v, 'bin', 'node');
+                        if (fs.existsSync(candidate)) {
+                            return { path: candidate, isBundled: false, source: `NVM (${v})` };
+                        }
+                    }
+                } catch (e) { }
+            }
+        }
+
+        // Strategy 6: Guaranteed Fallback - Use IDE's bundled Electron executable with ELECTRON_RUN_AS_NODE=1
+        if (process.execPath && fs.existsSync(process.execPath)) {
+            return { path: process.execPath, isBundled: true, source: 'Bundled IDE Runtime' };
+        }
+
+        return { path: '', isBundled: false, source: 'None' };
+    }
+
     /**
      * 预检查切换所需的运行环境
      * @param dbPathOverride 数据库路径覆盖（可选）
@@ -33,63 +188,26 @@ export class SwitcherProxy {
             suggestions: []
         };
 
-        // 1. 检查 Node.js
-        let nodeExe = '';
-        if (platform === 'win32') {
-            const possibleNodePaths = [
-                path.join(process.env.PROGRAMFILES || '', 'nodejs', 'node.exe'),
-                path.join(process.env['PROGRAMFILES(X86)'] || '', 'nodejs', 'node.exe'),
-                path.join(process.env.LOCALAPPDATA || '', 'Programs', 'nodejs', 'node.exe'),
-                path.join(process.env.APPDATA || '', 'npm', 'node.exe'),
-                'C:\\Program Files\\nodejs\\node.exe',
-                'C:\\nodejs\\node.exe',
-            ];
-
-            for (const p of possibleNodePaths) {
-                if (fs.existsSync(p)) {
-                    nodeExe = p;
-                    break;
-                }
-            }
-
-            if (!nodeExe) {
-                try {
-                    const whereResult = execSync('where node', { encoding: 'utf-8', windowsHide: true });
-                    const lines = whereResult.trim().split('\n');
-                    if (lines.length > 0 && fs.existsSync(lines[0].trim())) {
-                        nodeExe = lines[0].trim();
-                    }
-                } catch (e) {
-                    // 忽略
-                }
-            }
+        // 1. 检查 Node.js 运行时
+        const nodeInfo = this.findNodeExecutable();
+        if (nodeInfo.path) {
+            result.nodeJs = { 
+                ok: true, 
+                path: `${nodeInfo.path} (${nodeInfo.source})` 
+            };
         } else {
-            try {
-                nodeExe = execSync('which node', { encoding: 'utf-8' }).trim();
-            } catch (e) {
-                if (fs.existsSync('/usr/bin/node')) {
-                    nodeExe = '/usr/bin/node';
-                }
-            }
-        }
-
-        if (nodeExe && fs.existsSync(nodeExe)) {
-            result.nodeJs = { ok: true, path: nodeExe };
-        } else {
-            result.nodeJs = { ok: false, error: '未找到 Node.js' };
+            result.nodeJs = { ok: false, error: 'No Node.js runtime found' };
             result.success = false;
-            result.suggestions.push('❌ 请安装 Node.js: https://nodejs.org/ (建议 LTS 版本)');
+            result.suggestions.push('❌ Node.js runtime not found. Please install Node.js (https://nodejs.org/) or launch through Antigravity IDE.');
         }
 
-        // 2. 检查 npm (用于外部脚本运行环境)
+        // 2. 检查 npm (仅供信息展示，不影响切换执行)
         try {
             const npmCmd = platform === 'win32' ? 'npm.cmd --version' : 'npm --version';
-            const npmVersion = execSync(npmCmd, { encoding: 'utf-8', windowsHide: true }).trim();
+            const npmVersion = execSync(npmCmd, { encoding: 'utf-8', windowsHide: true, timeout: 3000 }).trim();
             result.npm = { ok: true, version: npmVersion };
         } catch (e) {
-            result.npm = { ok: false, error: 'npm 不可用' };
-            // npm 不是必须的，不影响 success
-            result.suggestions.push('⚠️ npm 未安装或不可用。建议安装 Node.js 完整版。');
+            result.npm = { ok: false, error: 'npm not detected (optional)' };
         }
 
         // 3. 检查数据库文件
@@ -100,10 +218,10 @@ export class SwitcherProxy {
         if (fs.existsSync(actualDbPath)) {
             result.database = { ok: true, path: actualDbPath };
         } else {
-            result.database = { ok: false, path: actualDbPath, error: '数据库文件不存在' };
+            result.database = { ok: false, path: actualDbPath, error: 'Database not found' };
             result.success = false;
             result.suggestions.push(`❌ Antigravity IDE database not found: ${actualDbPath}`);
-            result.suggestions.push('   Please install and launch Antigravity IDE at least once');
+            result.suggestions.push('   Please launch Antigravity IDE at least once to create its profile.');
         }
 
         // 4. 检查 IDE 可执行文件
@@ -136,10 +254,10 @@ export class SwitcherProxy {
         if (idePath && fs.existsSync(idePath)) {
             result.ide = { ok: true, path: idePath };
         } else {
-            result.ide = { ok: false, path: idePath, error: 'IDE 可执行文件不存在' };
-            // IDE 路径问题不是致命的，可以通过协议启动
-            result.suggestions.push(`⚠️ Antigravity IDE executable not found: ${idePath || '(unknown)'}`);
-            result.suggestions.push('   You may need to manually restart the IDE after switching');
+            result.ide = { ok: false, path: idePath, error: 'Executable path not found' };
+            // IDE 路径不是致命问题，可以通过系统 URL 协议启动
+            result.suggestions.push(`⚠️ Antigravity executable not found at default location: ${idePath || '(unknown)'}`);
+            result.suggestions.push('   Protocol handler (antigravity://) will be used to restart the editor.');
         }
 
         return result;
@@ -150,36 +268,21 @@ export class SwitcherProxy {
      */
     static formatCheckResult(result: EnvironmentCheckResult): string {
         const lines: string[] = [];
-        lines.push('### 环境检查结果\n');
+        lines.push('### Environment Diagnostics\n');
 
-        lines.push(`- Node.js: ${result.nodeJs.ok ? '✅ ' + result.nodeJs.path : '❌ ' + result.nodeJs.error}`);
-        lines.push(`- npm: ${result.npm.ok ? '✅ v' + result.npm.version : '⚠️ ' + result.npm.error}`);
-        lines.push(`- 数据库: ${result.database.ok ? '✅ 存在' : '❌ ' + result.database.error}`);
-        lines.push(`- IDE: ${result.ide.ok ? '✅ 存在' : '⚠️ ' + result.ide.error}`);
+        lines.push(`- Node.js Runtime: ${result.nodeJs.ok ? '✅ ' + result.nodeJs.path : '❌ ' + result.nodeJs.error}`);
+        lines.push(`- npm (Optional): ${result.npm.ok ? '✅ v' + result.npm.version : 'ℹ️ ' + result.npm.error}`);
+        lines.push(`- Database: ${result.database.ok ? '✅ ' + result.database.path : '❌ ' + result.database.error}`);
+        lines.push(`- IDE Executable: ${result.ide.ok ? '✅ ' + result.ide.path : '⚠️ ' + result.ide.error}`);
 
         if (result.suggestions.length > 0) {
-            lines.push('\n### 建议\n');
+            lines.push('\n### Recommendations\n');
             lines.push(result.suggestions.join('\n'));
         }
 
         return lines.join('\n');
     }
-    /**
-     * 创建并在外部执行一个独立脚本，接管账号切换的后续工作。
-     * 跨平台支持 (Windows/Linux/macOS)
-     * 
-     * 流程：
-     * 1. 生成独立的 Node.js 脚本（包含完整的注入逻辑）
-     * 2. 使用平台特定方式启动独立进程
-     * 3. 独立进程监测 IDE 进程关闭 -> 等待 -> 注入 -> 启动
-     * 
-     * @param accessToken OAuth access token
-     * @param refreshToken OAuth refresh token
-     * @param expiry Token 过期时间戳（秒）
-     * @param dbPathOverride 数据库路径覆盖（可选）
-     * @param exePathOverride Antigravity 可执行文件路径覆盖（可选，按平台）
-     * @param processWaitSeconds 进程关闭/启动等待时间（秒，默认10秒，低配机器建议20-30秒）
-     */
+
     static async executeExternalSwitch(
         accessToken: string,
         refreshToken: string,
@@ -199,52 +302,12 @@ export class SwitcherProxy {
         const nodeModulesPath = path.join(extensionRoot, 'node_modules');
         const platform = os.platform();
 
-        // 获取 Node.js 可执行文件路径
-        // process.execPath 在 Electron 应用中返回的是 Electron 可执行文件，不是 Node.js
-        // 需要找到系统中的 Node.js
-        let nodeExe = '';
-        if (platform === 'win32') {
-            // Windows: 尝试多个可能的 Node.js 路径
-            const possibleNodePaths = [
-                path.join(process.env.PROGRAMFILES || '', 'nodejs', 'node.exe'),
-                path.join(process.env['PROGRAMFILES(X86)'] || '', 'nodejs', 'node.exe'),
-                path.join(process.env.LOCALAPPDATA || '', 'Programs', 'nodejs', 'node.exe'),
-                path.join(process.env.APPDATA || '', 'npm', 'node.exe'),
-                'C:\\Program Files\\nodejs\\node.exe',
-                'C:\\nodejs\\node.exe',
-            ];
-
-            for (const p of possibleNodePaths) {
-                if (fs.existsSync(p)) {
-                    nodeExe = p;
-                    break;
-                }
-            }
-
-            // 如果找不到，尝试使用 where 命令
-            if (!nodeExe) {
-                try {
-                    const result = execSync('where node', { encoding: 'utf-8', windowsHide: true });
-                    const lines = result.trim().split('\n');
-                    if (lines.length > 0 && fs.existsSync(lines[0].trim())) {
-                        nodeExe = lines[0].trim();
-                    }
-                } catch (e) {
-                    // 忽略
-                }
-            }
-        } else {
-            // Linux/macOS: 使用 which 命令
-            try {
-                nodeExe = execSync('which node', { encoding: 'utf-8' }).trim();
-            } catch (e) {
-                nodeExe = '/usr/bin/node';
-            }
+        // 智能定位 Node.js 运行时
+        const nodeInfo = this.findNodeExecutable();
+        if (!nodeInfo.path || !fs.existsSync(nodeInfo.path)) {
+            throw new Error('Cannot find Node.js or Antigravity IDE runtime executable');
         }
-
-        if (!nodeExe || !fs.existsSync(nodeExe)) {
-            throw new Error('Cannot find Node.js executable');
-        }
+        const nodeExe = nodeInfo.path;
 
         // 获取实际使用的数据库路径
         const actualDbPath = dbPathOverride && dbPathOverride.trim()
@@ -578,6 +641,9 @@ async function injectToken() {
             'antigravityAuthStatus',
             'antigravitySessionState', 
             'antigravityQuotaCache',
+            'antigravityUnifiedStateSync.userStatus',
+            'antigravityUnifiedStateSync.modelCredits',
+            'antigravityUnifiedStateSync.modelPreferences',
             'jetskiStateSync.sessionCache'
         ];
         staleKeys.forEach(key => {
@@ -885,12 +951,11 @@ main().catch(e => {
         if (platform === 'win32') {
             // Windows: 使用 VBScript 包装确保完全独立
             const vbsPath = path.join(tempDir, `ag_launch_${timestamp}.vbs`);
-            // VBScript 不需要对路径中的反斜杠进行 JavaScript 风格的双转义
             const nodeExeVbs = nodeExe;
             const scriptPathVbs = mainScriptPath;
-            // 使用 0 = 隐藏窗口，避免弹出控制台界面
-            // 调试建议：如果怀疑脚本未运行，可暂时将 0 改为 1 以显示窗口
             const vbsContent = `Set WshShell = CreateObject("WScript.Shell")
+Set WshEnv = WshShell.Environment("PROCESS")
+WshEnv("ELECTRON_RUN_AS_NODE") = "1"
 WshShell.Run Chr(34) & "${nodeExeVbs}" & Chr(34) & " " & Chr(34) & "${scriptPathVbs}" & Chr(34), 0, False
 `;
             fs.writeFileSync(vbsPath, vbsContent, 'utf-8');
@@ -903,8 +968,8 @@ WshShell.Run Chr(34) & "${nodeExeVbs}" & Chr(34) & " " & Chr(34) & "${scriptPath
             child.unref();
 
         } else {
-            // Linux/macOS: 使用 nohup + setsid 确保独立
-            const shellCmd = `nohup "${nodeExe}" "${mainScriptPath}" > "${logPath}" 2>&1 &`;
+            // Linux/macOS: 使用 nohup + setsid 确保独立并注入 ELECTRON_RUN_AS_NODE=1
+            const shellCmd = `nohup env ELECTRON_RUN_AS_NODE=1 "${nodeExe}" "${mainScriptPath}" > "${logPath}" 2>&1 &`;
 
             spawn('sh', ['-c', shellCmd], {
                 detached: true,

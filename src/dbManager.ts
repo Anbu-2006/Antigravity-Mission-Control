@@ -126,6 +126,41 @@ export class DBManager {
         }
     }
 
+    /**
+     * Purges stale session cache, quota cache, and authentication state from the SQLite state database.
+     * This resets corrupted agent loops and ghost session state without affecting stored credentials.
+     */
+    static async purgeStaleSessionKeys(dbPath?: string): Promise<number> {
+        const resolvedDbPath = this.resolveDbPath(dbPath);
+        if (!fs.existsSync(resolvedDbPath)) {
+            return 0;
+        }
+
+        const db = await this.openDb(resolvedDbPath);
+        let deletedCount = 0;
+        try {
+            const staleKeys = [
+                'antigravityAuthStatus',
+                'antigravitySessionState',
+                'antigravityQuotaCache',
+                'antigravityUnifiedStateSync.userStatus',
+                'antigravityUnifiedStateSync.modelCredits',
+                'antigravityUnifiedStateSync.modelPreferences',
+                'jetskiStateSync.sessionCache'
+            ];
+            for (const key of staleKeys) {
+                try {
+                    db.run("DELETE FROM ItemTable WHERE key = ?", [key]);
+                    deletedCount++;
+                } catch (e) { /* ignore */ }
+            }
+            this.saveDb(db, resolvedDbPath);
+            return deletedCount;
+        } finally {
+            db.close();
+        }
+    }
+
     private static encodeLenDelim(fieldNum: number, data: Buffer): Buffer {
         const tag = (fieldNum << 3) | 2;
         return Buffer.concat([encodeVarint(tag), encodeVarint(data.length), data]);
@@ -285,7 +320,7 @@ export class DBManager {
                         const [len, off2] = readVarint(innerProto, off1);
                         offset = off2 + len;
                     } else if (wire === 0) {
-                        const [, off2] = readVarint(outerProto, off1);
+                        const [, off2] = readVarint(innerProto, off1);
                         offset = off2;
                     } else { offset = off1 + 8; }
                 }

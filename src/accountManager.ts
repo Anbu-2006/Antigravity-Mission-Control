@@ -14,6 +14,7 @@ import {
     LOAD_CODE_ASSIST_ENDPOINTS,
     IMPORTANT_MODELS
 } from './constants';
+import { cleanRefreshToken } from './utils';
 
 export interface TokenInfo {
     access_token: string;
@@ -252,20 +253,40 @@ export class AccountManager {
     }
 
     static async refreshToken(refreshToken: string): Promise<{ accessToken: string, expiresIn: number }> {
-        const response = await axios.post(TOKEN_URL, {
-            client_id: CLIENT_ID,
-            client_secret: CLIENT_SECRET,
-            refresh_token: refreshToken,
-            grant_type: "refresh_token",
-        }, { timeout: 10000 });
+        const cleanToken = cleanRefreshToken(refreshToken);
+        if (!cleanToken) {
+            throw new Error("Refresh token is empty or invalid format.");
+        }
 
-        if (response.status === 200) {
-            return {
-                accessToken: response.data.access_token,
-                expiresIn: response.data.expires_in
-            };
-        } else {
-            throw new Error(`Token refresh failed: ${response.data}`);
+        try {
+            const response = await axios.post(TOKEN_URL, {
+                client_id: CLIENT_ID,
+                client_secret: CLIENT_SECRET,
+                refresh_token: cleanToken,
+                grant_type: "refresh_token",
+            }, {
+                timeout: 15000,
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Accept': 'application/json'
+                }
+            });
+
+            if (response.status === 200 && response.data?.access_token) {
+                return {
+                    accessToken: response.data.access_token,
+                    expiresIn: response.data.expires_in || 3600
+                };
+            } else {
+                throw new Error(`Token refresh returned HTTP ${response.status}`);
+            }
+        } catch (err: any) {
+            if (err.response?.data) {
+                const data = err.response.data;
+                const desc = data.error_description || data.error || JSON.stringify(data);
+                throw new Error(`Google OAuth error (${desc})`);
+            }
+            throw err;
         }
     }
 

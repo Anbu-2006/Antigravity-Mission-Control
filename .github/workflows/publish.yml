@@ -10,6 +10,7 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: write
+      id-token: write
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -31,9 +32,14 @@ jobs:
         env:
           VSCE_PAT: ${{ secrets.VSCE_PAT }}
 
-      # Publish to Open VSX Registry (open-source marketplace)
+      # Publish to Open VSX Registry (supports OIDC Trusted Publishing & PAT fallback)
       - name: Publish to Open VSX Registry
-        run: npx ovsx publish *.vsix --pat ${{ secrets.OPEN_VSX_TOKEN }}
+        run: |
+          if [ -n "${{ secrets.OPEN_VSX_TOKEN }}" ]; then
+            npx ovsx publish *.vsix --pat ${{ secrets.OPEN_VSX_TOKEN }}
+          else
+            npx ovsx publish *.vsix
+          fi
 
       # Create GitHub Release with the .vsix artifact
       - name: Create GitHub Release

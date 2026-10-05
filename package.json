@@ -2,7 +2,7 @@
   "name": "ag-mission-hub-anbudev",
   "displayName": "Antigravity Mission Hub (Anbudev)",
   "description": "%extension.description%",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "publisher": "anbudev",
   "icon": "resources/icon.png",
   "repository": {
@@ -83,6 +83,10 @@
         "command": "antigravity-mission-hub.quickSwitch",
         "title": "Antigravity: Quick Switch to Healthiest Account",
         "icon": "$(zap)"
+      },
+      {
+        "command": "antigravity-mission-hub.installNode",
+        "title": "Antigravity: Install Node.js Environment"
       }
     ],
     "keybindings": [

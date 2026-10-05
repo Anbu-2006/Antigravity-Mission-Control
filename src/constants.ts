@@ -7,15 +7,15 @@ export const CLIENT_SECRET = "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";
 export const TOKEN_URL = "https://oauth2.googleapis.com/token";
 
 export const QUOTA_API_ENDPOINTS = [
-    "https://daily-cloudcode-pa.sandbox.googleapis.com/v1internal:fetchAvailableModels",
+    "https://cloudcode-pa.googleapis.com/v1internal:fetchAvailableModels",
     "https://daily-cloudcode-pa.googleapis.com/v1internal:fetchAvailableModels",
-    "https://cloudcode-pa.googleapis.com/v1internal:fetchAvailableModels"
+    "https://daily-cloudcode-pa.sandbox.googleapis.com/v1internal:fetchAvailableModels"
 ];
 
 export const LOAD_CODE_ASSIST_ENDPOINTS = [
-    "https://daily-cloudcode-pa.sandbox.googleapis.com/v1internal:loadCodeAssist",
+    "https://cloudcode-pa.googleapis.com/v1internal:loadCodeAssist",
     "https://daily-cloudcode-pa.googleapis.com/v1internal:loadCodeAssist",
-    "https://cloudcode-pa.googleapis.com/v1internal:loadCodeAssist"
+    "https://daily-cloudcode-pa.sandbox.googleapis.com/v1internal:loadCodeAssist"
 ];
 
 export const QUOTA_API_URL = QUOTA_API_ENDPOINTS[0];
@@ -116,7 +116,7 @@ export function getVSCDBPath(overridePath?: string): string {
 // 向后兼容：保留常量导出（使用默认路径）
 export const VSCDB_PATH = getVSCDBPath();
 
-export const IMPORTANT_MODELS = ["gemini", "claude"];
+export const IMPORTANT_MODELS = ["gemini", "claude", "gpt", "opus", "sonnet", "haiku"];
 export const USERINFO_URL = "https://www.googleapis.com/oauth2/v2/userinfo";
 export const AUTH_URL = "https://accounts.google.com/o/oauth2/v2/auth";
 

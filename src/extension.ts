@@ -25,7 +25,7 @@ import { DashboardProvider } from './dashboardProvider';
 import { ModelGroupManager } from './modelGroupManager';
 import { SwitcherProxy } from './switcherProxy';
 import { t } from './i18n';
-import { getModelDisplayName } from './utils';
+import { getModelDisplayName, cleanRefreshToken } from './utils';
 
 /**
  * 计算字符串在等宽字体下的视觉宽度
@@ -908,15 +908,12 @@ temp/
         if (intervalMinutes > 0) {
             const intervalMs = intervalMinutes * 60 * 1000;
             autoRefreshTimer = setInterval(async () => {
-                // Network Forensic: Skip auto-refresh if TLS is blocked
-                if (tlsBlocked) {
-                    console.log('[AutoRefresh] Skipped: TLS blocked by VPN. Use Refresh All to retry.');
-                    return;
-                }
+                // Reset blocked flag so auto-refresh can retry
+                tlsBlocked = false;
                 // 先检测 IDE 账号是否变更，再刷新状态栏
-                const changed = await syncWithIdeAccount();
-                // Execute a full refresh of all accounts
-                await vscode.commands.executeCommand('antigravity-mission-hub.refreshAllAccounts');
+                await syncWithIdeAccount();
+                // Execute a silent refresh of all accounts
+                await vscode.commands.executeCommand('antigravity-mission-hub.refreshAllAccounts', true);
             }, intervalMs);
             console.log(`Antigravity Mission Hub: 自动刷新已启用，间隔 ${intervalMinutes} 分钟`);
         } else {
@@ -1149,12 +1146,20 @@ temp/
         if (!envCheck.success) {
             // 有致命问题，显示详细信息
             const detailMessage = envCheck.suggestions.join('\n');
+            const options: string[] = [t('tryAnyway')];
+            if (!envCheck.nodeJs.ok) {
+                options.push('Install Node.js');
+            }
             const action = await vscode.window.showErrorMessage(
                 t('envCheckFailed', detailMessage),
                 { modal: true },
-                t('tryAnyway'),
-                t('cancel')
+                ...options
             );
+
+            if (action === 'Install Node.js') {
+                vscode.commands.executeCommand('antigravity-mission-hub.installNode');
+                return;
+            }
 
             if (action !== t('tryAnyway')) {
                 return;
@@ -1165,8 +1170,7 @@ temp/
             const action = await vscode.window.showWarningMessage(
                 t('envCheckWarning', warnMessage),
                 { modal: true },
-                t('continue'),
-                t('cancel')
+                t('continue')
             );
 
             if (action !== t('continue')) {
@@ -1314,24 +1318,25 @@ temp/
         }
     });
 
-    let refreshAllAccountsCommand = vscode.commands.registerCommand('antigravity-mission-hub.refreshAllAccounts', async () => {
-        await vscode.window.withProgress({
-            location: vscode.ProgressLocation.Notification,
-            title: t('loading'),
-            cancellable: false
-        }, async (progress) => {
-            progress.report({ message: '正在检测 IDE 最新登录状态...' });
-            await syncWithIdeAccount(); // 新增：刷新前先主动侦测一次
+    let refreshAllAccountsCommand = vscode.commands.registerCommand('antigravity-mission-hub.refreshAllAccounts', async (silentArg?: boolean) => {
+        const isSilent = silentArg === true;
+        const doRefreshWork = async (progress?: vscode.Progress<{ message?: string }>) => {
+            if (progress) {
+                progress.report({ message: '正在检测 IDE 最新登录状态...' });
+            }
+            await syncWithIdeAccount();
             
-            AccountManager.clearQuotaCache(); // 手动刷新全部 → 清除缓存
-            AccountManager.clearBackoffState(); // 手动刷新 → 绕过指数退避冷却
-            tlsBlocked = false; // 手动刷新 → 清除 VPN 阻断标志，允许重试
+            AccountManager.clearQuotaCache();
+            AccountManager.clearBackoffState();
+            tlsBlocked = false;
             const index = AccountManager.loadIndex();
             const total = index.accounts.length;
             
             for (let i = 0; i < total; i++) {
                 const accSum = index.accounts[i];
-                progress.report({ message: t('refreshingProgress', i + 1, total, accSum.email) });
+                if (progress) {
+                    progress.report({ message: t('refreshingProgress', i + 1, total, accSum.email) });
+                }
                 
                 try {
                     const account = AccountManager.loadAccount(accSum.id);
@@ -1343,27 +1348,32 @@ temp/
                             account.last_used = Date.now();
                             AccountManager.saveAccount(account);
                         }
-                        // Anti-Tokenware: OS-Level Edge Case
-                        // Always apply 300-700ms jitter, even on the first request, 
-                        // to prevent WAF spikes if multiple extension hosts boot simultaneously.
                         await new Promise(r => setTimeout(r, 300 + Math.random() * 400));
-
-                        // 立即获取配额写入缓存，供 Dashboard 直接读取
                         await AccountManager.fetchQuotaCached(account.token.access_token);
                     }
                     
-                    // 局部刷新 UI: 仪表盘、侧边栏、状态栏
-                    DashboardProvider.postUpdate(); // 仪表盘实时更新单个账号数据
-                    accountTreeProvider.refresh();   // 侧边栏同步刷新
-                    updateStatusBar();               // 状态栏同步刷新 (如果是当前账号)
+                    DashboardProvider.postUpdate();
+                    accountTreeProvider.refresh();
+                    updateStatusBar();
                 } catch (e) {
                     console.error(`无法刷新 ${accSum.email}`, e);
                 }
             }
-            // 循环结束后做最后的全局同步
-            DashboardProvider.refresh(); // 做一次完整的 _update (含翻译等)
-            vscode.window.showInformationMessage(t('allAccountsRefreshed'));
-        });
+            DashboardProvider.refresh();
+            if (!isSilent) {
+                vscode.window.showInformationMessage(t('allAccountsRefreshed'));
+            }
+        };
+
+        if (isSilent) {
+            await doRefreshWork();
+        } else {
+            await vscode.window.withProgress({
+                location: vscode.ProgressLocation.Notification,
+                title: t('loading'),
+                cancellable: false
+            }, doRefreshWork);
+        }
     });
 
     // --- Token 登录命令 ---
@@ -1384,7 +1394,7 @@ temp/
                 return;
             }
 
-            const refreshTokenValue = refreshTokenInput.trim();
+            const refreshTokenValue = cleanRefreshToken(refreshTokenInput.trim());
 
             await vscode.window.withProgress({
                 location: vscode.ProgressLocation.Notification,
@@ -1485,7 +1495,7 @@ temp/
             );
 
             if (confirm === t('copyToClipboard')) {
-                await vscode.env.clipboard.writeText(account.token.refresh_token);
+                await vscode.env.clipboard.writeText(cleanRefreshToken(account.token.refresh_token));
                 vscode.window.showInformationMessage(t('exportTokenCopied'));
             }
         } catch (e) {
@@ -1493,6 +1503,47 @@ temp/
         }
     });
     context.subscriptions.push(exportTokenCommand);
+
+    // --- Install Node.js 命令 (Cross-Platform) ---
+    let installNodeCommand = vscode.commands.registerCommand('antigravity-mission-hub.installNode', async () => {
+        const platform = process.platform;
+        let instructions: string;
+        let downloadUrl: string;
+
+        if (platform === 'darwin') {
+            instructions = 'macOS detected. You can install Node.js via:\n\n1. Homebrew: brew install node\n2. Official installer: https://nodejs.org\n3. nvm: curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.40.1/install.sh | bash && nvm install --lts';
+            downloadUrl = 'https://nodejs.org/en/download/';
+        } else if (platform === 'win32') {
+            instructions = 'Windows detected. You can install Node.js via:\n\n1. Official installer: https://nodejs.org\n2. winget: winget install OpenJS.NodeJS.LTS\n3. Chocolatey: choco install nodejs-lts\n4. Scoop: scoop install nodejs-lts';
+            downloadUrl = 'https://nodejs.org/en/download/';
+        } else {
+            instructions = 'Linux detected. You can install Node.js via:\n\n1. Package manager: apt install nodejs / dnf install nodejs\n2. nvm: curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.40.1/install.sh | bash && nvm install --lts\n3. Official: https://nodejs.org';
+            downloadUrl = 'https://nodejs.org/en/download/';
+        }
+
+        const action = await vscode.window.showInformationMessage(
+            instructions,
+            { modal: true },
+            'Open Download Page',
+            'Copy Install Command'
+        );
+
+        if (action === 'Open Download Page') {
+            vscode.env.openExternal(vscode.Uri.parse(downloadUrl));
+        } else if (action === 'Copy Install Command') {
+            let cmd: string;
+            if (platform === 'darwin') {
+                cmd = 'brew install node';
+            } else if (platform === 'win32') {
+                cmd = 'winget install OpenJS.NodeJS.LTS';
+            } else {
+                cmd = 'curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.40.1/install.sh | bash && nvm install --lts';
+            }
+            await vscode.env.clipboard.writeText(cmd);
+            vscode.window.showInformationMessage(`Install command copied to clipboard: ${cmd}`);
+        }
+    });
+    context.subscriptions.push(installNodeCommand);
 
     // --- 批量导出 Token 命令 ---
     let batchExportCommand = vscode.commands.registerCommand('antigravity-mission-hub.batchExportTokens', async () => {

@@ -201,68 +201,61 @@ export class ModelGroupManager {
      */
     private static extractSeriesName(modelName: string): string {
         const lowerName = modelName.toLowerCase();
+        const normalized = lowerName.replace(/(\d+)-(\d+)/g, '$1.$2');
 
-        // Claude 系列
-        if (lowerName.includes('claude')) {
-            if (lowerName.includes('4.6') || lowerName.includes('4-6')) {
-                return 'Claude 4.6 Thinking';
+        // Claude 系列 — handle all versions dynamically
+        if (normalized.includes('claude') || normalized.includes('opus') || normalized.includes('sonnet') || normalized.includes('haiku')) {
+            const versionMatch = normalized.match(/(\d+(?:\.\d+)?)/);
+            const version = versionMatch ? versionMatch[1] : '';
+            
+            let subType = '';
+            if (normalized.includes('opus')) { subType = 'Opus'; }
+            else if (normalized.includes('sonnet')) { subType = 'Sonnet'; }
+            else if (normalized.includes('haiku')) { subType = 'Haiku'; }
+            
+            if (version && subType) {
+                return `Claude ${subType} ${version}`;
             }
-            if (lowerName.includes('3.5') || lowerName.includes('3-5')) {
-                return 'Claude 3.5';
+            if (subType) {
+                return `Claude ${subType}`;
+            }
+            if (version) {
+                return `Claude ${version}`;
             }
             return 'Claude';
         }
 
         // Gemini 系列
-        if (lowerName.includes('gemini')) {
-            // 区分不同的 Gemini 版本
-            if (lowerName.includes('gemini-3.1') || lowerName.includes('gemini 3.1')) {
-                if (lowerName.includes('pro')) {
-                    return 'Gemini 3.1 Pro';
-                }
-                if (lowerName.includes('flash')) {
-                    return 'Gemini 3.1 Flash';
-                }
-                return 'Gemini 3.1';
+        if (normalized.includes('gemini')) {
+            const versionMatch = normalized.match(/(\d+(?:\.\d+)?)/);
+            const version = versionMatch ? versionMatch[1] : '';
+            
+            let subType = '';
+            if (normalized.includes('pro')) { subType = 'Pro'; }
+            else if (normalized.includes('flash')) { subType = 'Flash'; }
+            
+            if (version && subType) {
+                return `Gemini ${version} ${subType}`;
             }
-            if (lowerName.includes('gemini-3') || lowerName.includes('gemini 3')) {
-                if (lowerName.includes('pro')) {
-                    return 'Gemini 3 Pro';
-                }
-                if (lowerName.includes('flash')) {
-                    return 'Gemini 3 Flash';
-                }
-                return 'Gemini 3';
-            }
-            if (lowerName.includes('gemini-2.5') || lowerName.includes('gemini 2.5')) {
-                if (lowerName.includes('pro')) {
-                    return 'Gemini 2.5 Pro';
-                }
-                if (lowerName.includes('flash')) {
-                    return 'Gemini 2.5 Flash';
-                }
-                return 'Gemini 2.5';
-            }
-            if (lowerName.includes('gemini-2') || lowerName.includes('gemini 2')) {
-                if (lowerName.includes('pro')) {
-                    return 'Gemini 2 Pro';
-                }
-                if (lowerName.includes('flash')) {
-                    return 'Gemini 2 Flash';
-                }
-                return 'Gemini 2';
+            if (version) {
+                return `Gemini ${version}`;
             }
             return 'Gemini';
         }
 
         // GPT 系列
-        if (lowerName.includes('gpt')) {
-            return 'GPT';
+        if (normalized.includes('gpt')) {
+            const isOss = normalized.includes('oss');
+            const sizeMatch = normalized.match(/(\d+b)/i);
+            if (sizeMatch) {
+                return isOss ? `GPT-OSS ${sizeMatch[1].toUpperCase()}` : `GPT ${sizeMatch[1].toUpperCase()}`;
+            }
+            return isOss ? 'GPT-OSS' : 'GPT';
         }
 
         // 其他模型按首个单词分组
         const firstWord = modelName.split(/[\s\-_]/)[0];
-        return firstWord || '其他';
+        return firstWord || 'Other';
     }
 
     /**

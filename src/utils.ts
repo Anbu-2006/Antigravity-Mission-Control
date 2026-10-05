@@ -86,7 +86,15 @@ export function getModelDisplayName(name: string): string {
         'gemini-3.5-flash-high': 'Gemini 3.5 Flash (High)',
         'gemini-pro-agent': 'Gemini Pro (Agent)',
         'claude-sonnet-4.6': 'Claude Sonnet 4.6 (Thinking)',
+        'claude-sonnet-4-6': 'Claude Sonnet 4.6 (Thinking)',
         'claude-opus-4.6': 'Claude Opus 4.6 (Thinking)',
+        'claude-opus-4-6-thinking': 'Claude Opus 4.6 (Thinking)',
+        'claude-opus-5.5': 'Claude Opus 5.5 (Thinking)',
+        'claude-opus-5-5': 'Claude Opus 5.5 (Thinking)',
+        'claude-opus-5-5-thinking': 'Claude Opus 5.5 (Thinking)',
+        'claude-sonnet-5.5': 'Claude Sonnet 5.5 (Thinking)',
+        'claude-sonnet-5-5': 'Claude Sonnet 5.5 (Thinking)',
+        'claude-sonnet-5-5-thinking': 'Claude Sonnet 5.5 (Thinking)',
         'gpt-oss-120b-medium': 'GPT-OSS 120B (Medium)'
     };
 
@@ -96,7 +104,9 @@ export function getModelDisplayName(name: string): string {
 
     let formatted = n;
     if (lower.startsWith('gemini')) {
-        const parts = n.split('-');
+        // Normalize version like 3-1 to 3.1
+        const normalized = n.replace(/gemini-(\d+)-(\d+)/i, 'gemini-$1.$2');
+        const parts = normalized.split('-');
         const capParts = parts.map((part, idx) => {
             if (idx === 0) { return 'Gemini'; }
             if (part.toLowerCase() === 'pro') { return 'Pro'; }
@@ -114,7 +124,10 @@ export function getModelDisplayName(name: string): string {
             .replace(/\s+\(/g, ' (')
             .replace(/\s+/g, ' ');
     } else if (lower.startsWith('claude')) {
-        const parts = n.split('-');
+        // Normalize version like 4-6 to 4.6 or 5-5 to 5.5
+        const normalized = n.replace(/claude-(opus|sonnet|haiku)-(\d+)-(\d+)/i, 'claude-$1-$2.$3')
+                            .replace(/claude-(\d+)-(\d+)/i, 'claude-$1.$2');
+        const parts = normalized.split('-');
         const capParts = parts.map((part, idx) => {
             if (idx === 0) { return 'Claude'; }
             if (part.toLowerCase() === 'sonnet') { return 'Sonnet'; }
@@ -144,3 +157,35 @@ export function getModelDisplayName(name: string): string {
     }
     return formatted;
 }
+
+/**
+ * Sanitizes and extracts refresh tokens from raw input
+ * - Removes surrounding single/double/backtick quotes
+ * - Extracts token from JSON snippets (e.g., {"refresh_token": "..."})
+ * - Strips all internal whitespace, newlines, and carriage returns
+ */
+export function cleanRefreshToken(input: string): string {
+    if (!input) { return ''; }
+    let str = input.trim();
+    if (str.includes('{') || str.includes('refresh_token')) {
+        try {
+            const parsed = JSON.parse(str);
+            if (typeof parsed.refresh_token === 'string') {
+                str = parsed.refresh_token;
+            } else if (Array.isArray(parsed.accounts) && parsed.accounts[0]?.refresh_token) {
+                str = parsed.accounts[0].refresh_token;
+            }
+        } catch {
+            const match = str.match(/"refresh_token"\s*:\s*"([^"]+)"/);
+            if (match) {
+                str = match[1];
+            }
+        }
+    }
+    // Remove surrounding quotes if any
+    str = str.replace(/^["'`]|["'`]$/g, '');
+    // Strip all internal whitespace, newlines, carriage returns, tabs
+    str = str.replace(/\s+/g, '');
+    return str;
+}
+

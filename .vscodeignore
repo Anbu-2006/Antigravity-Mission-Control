@@ -24,6 +24,8 @@ scratch/**
 fix-badge.js
 fix-cats.ps1
 build.bat
+test_*.js
+test_suite.js
 *.code-workspace
 
 # Documentation — not needed at runtime
