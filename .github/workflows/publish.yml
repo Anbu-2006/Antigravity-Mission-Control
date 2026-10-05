@@ -27,22 +27,28 @@ jobs:
       - name: Package Extension
         run: npx @vscode/vsce package
 
-      # Publish to Open VSX Registry (supports OIDC Trusted Publishing & PAT fallback)
+      # Publish to Open VSX Registry (Trusted Publishing via OIDC or fallback PAT)
       - name: Publish to Open VSX Registry
+        env:
+          OPEN_VSX_TOKEN: ${{ secrets.OPEN_VSX_TOKEN }}
         run: |
-          if [ -n "${{ secrets.OPEN_VSX_TOKEN }}" ]; then
-            npx --yes ovsx publish *.vsix --pat ${{ secrets.OPEN_VSX_TOKEN }}
+          if [ -n "$OPEN_VSX_TOKEN" ]; then
+            npx ovsx publish *.vsix --pat "$OPEN_VSX_TOKEN"
           else
-            npx --yes ovsx publish *.vsix
+            npx ovsx publish *.vsix
           fi
 
-      # Publish to VS Code Marketplace (official) - only if VSCE_PAT configured
+      # Publish to VS Code Marketplace (official) - only if VSCE_PAT is set
       - name: Publish to VS Code Marketplace
-        if: ${{ secrets.VSCE_PAT != '' }}
         continue-on-error: true
-        run: npx @vscode/vsce publish
         env:
           VSCE_PAT: ${{ secrets.VSCE_PAT }}
+        run: |
+          if [ -n "$VSCE_PAT" ]; then
+            npx @vscode/vsce publish -p "$VSCE_PAT"
+          else
+            echo "VSCE_PAT is not set. Skipping VS Code Marketplace publish."
+          fi
 
       # Create GitHub Release with the .vsix artifact
       - name: Create GitHub Release
