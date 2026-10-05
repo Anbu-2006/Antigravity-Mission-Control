@@ -3,7 +3,8 @@ name: Publish Extension
 on:
   push:
     tags:
-      - 'v*' # Triggered when you push a tag like v6.0.0
+      - 'v*'
+  workflow_dispatch:
 
 jobs:
   publish:
@@ -26,23 +27,26 @@ jobs:
       - name: Package Extension
         run: npx @vscode/vsce package
 
-      # Publish to VS Code Marketplace (official)
-      - name: Publish to VS Code Marketplace
-        run: npx @vscode/vsce publish
-        env:
-          VSCE_PAT: ${{ secrets.VSCE_PAT }}
-
       # Publish to Open VSX Registry (supports OIDC Trusted Publishing & PAT fallback)
       - name: Publish to Open VSX Registry
         run: |
           if [ -n "${{ secrets.OPEN_VSX_TOKEN }}" ]; then
-            npx ovsx publish *.vsix --pat ${{ secrets.OPEN_VSX_TOKEN }}
+            npx --yes ovsx publish *.vsix --pat ${{ secrets.OPEN_VSX_TOKEN }}
           else
-            npx ovsx publish *.vsix
+            npx --yes ovsx publish *.vsix
           fi
+
+      # Publish to VS Code Marketplace (official) - only if VSCE_PAT configured
+      - name: Publish to VS Code Marketplace
+        if: ${{ secrets.VSCE_PAT != '' }}
+        continue-on-error: true
+        run: npx @vscode/vsce publish
+        env:
+          VSCE_PAT: ${{ secrets.VSCE_PAT }}
 
       # Create GitHub Release with the .vsix artifact
       - name: Create GitHub Release
+        if: startsWith(github.ref, 'refs/tags/')
         uses: softprops/action-gh-release@v2
         with:
           files: "*.vsix"
