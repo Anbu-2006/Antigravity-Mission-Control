@@ -35,12 +35,10 @@ export const ACCOUNTS_DIR = path.join(DATA_DIR, "accounts");
  * - 只会执行一次，后续启动新目录已存在则跳过
  */
 export function migrateDataDir(): void {
-    // 新目录已存在 → 无需迁移
     if (fs.existsSync(DATA_DIR)) {
         return;
     }
 
-    // 旧目录不存在 → 全新安装，无需迁移
     if (!fs.existsSync(OLD_DATA_DIR)) {
         return;
     }
@@ -51,12 +49,11 @@ export function migrateDataDir(): void {
         console.log(`[Cockpit] 配置迁移完成。旧目录已保留。`);
     } catch (err) {
         console.error(`[Cockpit] 配置迁移失败:`, err);
-        // 迁移失败不影响正常启动，用户可手动复制
     }
 }
 
 /**
- * 递归复制目录（纯 Node.js，不依赖 fs.cpSync 以兼容低版本 Node 16）
+ * 递归复制目录
  */
 function copyDirRecursive(src: string, dest: string): void {
     fs.mkdirSync(dest, { recursive: true });
@@ -75,7 +72,46 @@ function copyDirRecursive(src: string, dest: string): void {
 }
 
 /**
- * 获取 Antigravity IDE 的全局状态数据库路径
+ * 获取所有可能存在的 Antigravity IDE 状态数据库路径 (包括 Antigravity IDE 和旧版 Antigravity)
+ */
+export function getAllVSCDBPaths(): string[] {
+    const paths: string[] = [];
+    const platform = os.platform();
+
+    if (platform === 'win32') {
+        const appData = process.env.APPDATA || '';
+        const p1 = path.join(appData, 'Antigravity IDE', 'User', 'globalStorage', 'state.vscdb');
+        const p2 = path.join(appData, 'Antigravity', 'User', 'globalStorage', 'state.vscdb');
+        if (fs.existsSync(p1)) { paths.push(p1); }
+        if (fs.existsSync(p2)) { paths.push(p2); }
+        if (paths.length === 0) {
+            paths.push(p1);
+        }
+    } else if (platform === 'darwin') {
+        const appSupport = path.join(os.homedir(), 'Library', 'Application Support');
+        const p1 = path.join(appSupport, 'Antigravity IDE', 'User', 'globalStorage', 'state.vscdb');
+        const p2 = path.join(appSupport, 'Antigravity', 'User', 'globalStorage', 'state.vscdb');
+        if (fs.existsSync(p1)) { paths.push(p1); }
+        if (fs.existsSync(p2)) { paths.push(p2); }
+        if (paths.length === 0) {
+            paths.push(p1);
+        }
+    } else {
+        const configDir = path.join(os.homedir(), '.config');
+        const p1 = path.join(configDir, 'Antigravity IDE', 'User', 'globalStorage', 'state.vscdb');
+        const p2 = path.join(configDir, 'Antigravity', 'User', 'globalStorage', 'state.vscdb');
+        if (fs.existsSync(p1)) { paths.push(p1); }
+        if (fs.existsSync(p2)) { paths.push(p2); }
+        if (paths.length === 0) {
+            paths.push(p1);
+        }
+    }
+
+    return paths;
+}
+
+/**
+ * 获取 Antigravity IDE 的全局状态数据库主路径
  * @param overridePath 配置中的覆盖路径（可选）
  * @returns 数据库文件路径
  */
@@ -84,39 +120,16 @@ export function getVSCDBPath(overridePath?: string): string {
         return overridePath.trim();
     }
 
-    const platform = os.platform();
-
-    if (platform === 'win32') {
-        const appData = process.env.APPDATA || '';
-        const newPath = path.join(appData, 'Antigravity IDE', 'User', 'globalStorage', 'state.vscdb');
-        if (fs.existsSync(newPath) || fs.existsSync(path.join(appData, 'Antigravity IDE'))) {
-            return newPath;
-        }
-        return path.join(appData, 'Antigravity', 'User', 'globalStorage', 'state.vscdb');
-    }
-
-    if (platform === 'darwin') {
-        const appSupport = path.join(os.homedir(), 'Library', 'Application Support');
-        const newPath = path.join(appSupport, 'Antigravity IDE', 'User', 'globalStorage', 'state.vscdb');
-        if (fs.existsSync(newPath) || fs.existsSync(path.join(appSupport, 'Antigravity IDE'))) {
-            return newPath;
-        }
-        return path.join(appSupport, 'Antigravity', 'User', 'globalStorage', 'state.vscdb');
-    }
-
-    // Linux
-    const configDir = path.join(os.homedir(), '.config');
-    const newPath = path.join(configDir, 'Antigravity IDE', 'User', 'globalStorage', 'state.vscdb');
-    if (fs.existsSync(newPath) || fs.existsSync(path.join(configDir, 'Antigravity IDE'))) {
-        return newPath;
-    }
-    return path.join(configDir, 'Antigravity', 'User', 'globalStorage', 'state.vscdb');
+    const all = getAllVSCDBPaths();
+    return all[0];
 }
 
-// 向后兼容：保留常量导出（使用默认路径）
 export const VSCDB_PATH = getVSCDBPath();
 
-export const IMPORTANT_MODELS = ["gemini", "claude", "gpt", "opus", "sonnet", "haiku"];
+export const IMPORTANT_MODELS = [
+    "gemini", "claude", "gpt", "opus", "sonnet", "haiku",
+    "o1", "o3", "deepseek", "chatgpt", "flash", "pro"
+];
 export const USERINFO_URL = "https://www.googleapis.com/oauth2/v2/userinfo";
 export const AUTH_URL = "https://accounts.google.com/o/oauth2/v2/auth";
 

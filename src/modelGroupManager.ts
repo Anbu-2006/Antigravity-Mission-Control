@@ -151,10 +151,7 @@ export class ModelGroupManager {
         const now = Date.now();
 
         for (const model of models) {
-            // 提取模型系列名称 (如 "Claude", "Gemini")
             const seriesName = this.extractSeriesName(model.name);
-
-            // 创建分组键：系列名称 + 重置时间
             const groupKey = `${seriesName}_${model.resetTime || 'unknown'}`;
 
             if (!groups.has(groupKey)) {
@@ -173,15 +170,11 @@ export class ModelGroupManager {
             }
         }
 
-        // 转换为数组并合并同名分组
         const groupsArray = Array.from(groups.values());
         const mergedGroups: Map<string, ModelGroup> = new Map();
 
         for (const group of groupsArray) {
             if (mergedGroups.has(group.name)) {
-                // 如果已有同名分组，需要判断是否合并
-                // 根据截图逻辑：只有配额和重置时间相同才能合并
-                // 这里我们保留独立分组，但添加编号
                 let count = 2;
                 let newName = `${group.name} ${count}`;
                 while (mergedGroups.has(newName)) {
@@ -199,11 +192,11 @@ export class ModelGroupManager {
     /**
      * 提取模型系列名称
      */
-    private static extractSeriesName(modelName: string): string {
+    public static extractSeriesName(modelName: string): string {
         const lowerName = modelName.toLowerCase();
         const normalized = lowerName.replace(/(\d+)-(\d+)/g, '$1.$2');
 
-        // Claude 系列 — handle all versions dynamically
+        // Claude 系列 (Opus 5.5, Sonnet 5.5, Opus 4.6, Sonnet 4.6, 3.5, etc.)
         if (normalized.includes('claude') || normalized.includes('opus') || normalized.includes('sonnet') || normalized.includes('haiku')) {
             const versionMatch = normalized.match(/(\d+(?:\.\d+)?)/);
             const version = versionMatch ? versionMatch[1] : '';
@@ -243,17 +236,23 @@ export class ModelGroupManager {
             return 'Gemini';
         }
 
-        // GPT 系列
-        if (normalized.includes('gpt')) {
+        // GPT / OpenAI 系列
+        if (normalized.includes('gpt') || normalized.includes('o1') || normalized.includes('o3') || normalized.includes('chatgpt')) {
             const isOss = normalized.includes('oss');
             const sizeMatch = normalized.match(/(\d+b)/i);
             if (sizeMatch) {
                 return isOss ? `GPT-OSS ${sizeMatch[1].toUpperCase()}` : `GPT ${sizeMatch[1].toUpperCase()}`;
             }
+            if (normalized.includes('4o')) { return 'GPT-4o'; }
+            if (normalized.includes('o1')) { return 'o1'; }
+            if (normalized.includes('o3')) { return 'o3'; }
             return isOss ? 'GPT-OSS' : 'GPT';
         }
 
-        // 其他模型按首个单词分组
+        if (normalized.includes('deepseek')) {
+            return 'DeepSeek';
+        }
+
         const firstWord = modelName.split(/[\s\-_]/)[0];
         return firstWord || 'Other';
     }
@@ -281,16 +280,10 @@ export class ModelGroupManager {
 
     /**
      * 初始化默认分组（仅在首次安装时调用）
-     * 当分组配置为空时，创建一个名为 "Group1" 的默认分组，
-     * 并将所有传入的模型加入该分组。
-     * 
-     * @param models 当前账号下的所有模型
-     * @returns 更新后的配置（如果进行了初始化），否则返回 null
      */
     static initDefaultGroupIfNeeded(models: ModelInfo[]): ModelGroupsConfig | null {
         const config = this.loadGroups();
         
-        // 仅当分组列表为空且从未执行过自动分组时触发
         if (config.groups.length === 0 && config.lastAutoGrouped === null) {
             const now = Date.now();
             const defaultGroup: ModelGroup = {
@@ -303,11 +296,10 @@ export class ModelGroupManager {
             
             const newConfig: ModelGroupsConfig = {
                 groups: [defaultGroup],
-                lastAutoGrouped: now  // 标记已初始化，防止重复触发
+                lastAutoGrouped: now
             };
             
             this.saveGroups(newConfig);
-            console.log(`[ModelGroupManager] 首次安装：已创建默认分组 "Group1"，包含 ${models.length} 个模型`);
             return newConfig;
         }
         
