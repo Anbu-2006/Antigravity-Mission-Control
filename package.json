@@ -85,6 +85,11 @@
         "icon": "$(zap)"
       },
       {
+        "command": "antigravity-mission-hub.safeClean",
+        "title": "Antigravity: Safe Clean Corrupted Trajectories & State",
+        "icon": "$(trash)"
+      },
+      {
         "command": "antigravity-mission-hub.installNode",
         "title": "Antigravity: Install Node.js Environment"
       }
