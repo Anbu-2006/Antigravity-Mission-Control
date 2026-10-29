@@ -503,9 +503,9 @@ function renderGroupsList() {
     c.innerHTML = groupsConfig.groups.map(g => '<div class="gc"><div class="gc-head">'
         + '<input type="text" class="gc-input" value="' + g.name + '" onchange="updateGroupName(\\'' + g.id + '\\',this.value)" onclick="event.stopPropagation()">'
         + '<button class="action-btn danger ghost" style="padding:4px 8px;font-size:10px" onclick="deleteGroup(\\'' + g.id + '\\')">DEL</button></div>'
-        + '<div class="gc-tags">' + g.models.map(mn => '<span class="gc-tag">' + getDisplayName(mn) + '<span class="gc-rm" onclick="removeModelFromGroup(\\'' + g.id + '\\',\\'' + mn + '\\')">×</span></span>').join('')
+        + '<div class="gc-tags">' + g.models.map(mn => '<span class="gc-tag">' + getDisplayName(mn) + '<span class="gc-rm" onclick="removeModelFromGroup(\\'' + g.id + '\\',\\'' + mn + '\\')">&times;</span></span>').join('')
         + '<button class="gc-add" onclick="toggleDD(\\'' + g.id + '\\',event)">+ ADD</button>'
-        + '<div class="gc-dd" id="dd-' + g.id + '">' + all.filter(m => !g.models.includes(m.name)).map(m => '<div class="gc-dd-item' + (used.has(m.name)&&!g.models.includes(m.name)?' disabled':'') + '" onclick="' + (used.has(m.name)&&!g.models.includes(m.name)?'':("addModelToGroup('"+g.id+"','"+m.name+"')")) + '">' + getDisplayName(m.name) + '</div>').join('') + '</div>'
+        + '<div class="gc-dd" id="dd-' + g.id + '">' + all.filter(m => !g.models.includes(m.name)).map(m => '<div class="gc-dd-item' + (used.has(m.name)&&!g.models.includes(m.name)?' disabled':'') + '" onclick="' + (used.has(m.name)&&!g.models.includes(m.name)?'':(\"addModelToGroup('\"+g.id+\"','\"+m.name+\"')\")) + '">' + getDisplayName(m.name) + '</div>').join('') + '</div>'
         + '</div></div>').join('');
 }
 
