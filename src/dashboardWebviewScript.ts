@@ -90,7 +90,6 @@ if (!activeAccountId || !accounts.find(a => a.id === activeAccountId)) {
     activeAccountId = current ? current.id : (accounts[0] ? accounts[0].id : null);
 }
 
-// Ensure at least one account is selected
 function ensureActive() {
     if (!accounts.find(a => a.id === activeAccountId) && accounts.length > 0) {
         activeAccountId = accounts[0].id;
@@ -163,7 +162,6 @@ function renderTrafficNetwork() {
         </div>
     \`;
 
-    // Dynamic API Status Logic based on model telemetry
     let gCount = 0, gTotal = 0, aCount = 0, aTotal = 0, isRl = false;
     accounts.forEach(acc => {
         if (acc.quota && acc.quota.is_error && acc.quota.error_status === 429) isRl = true;
@@ -247,10 +245,9 @@ function renderFocusNode() {
         consumed = mCount > 0 ? (100 - health) : 0;
     }
 
-    const tier = (acc.quota && acc.quota.tier) ? acc.quota.tier : 'UNKNOWN TIER';
+    const tier = (acc.quota && acc.quota.tier) ? acc.quota.tier.toUpperCase() : 'STANDARD';
     const displayName = acc.name || acc.email.split('@')[0];
     
-    // Top Hero section
     let h = \`
         <div class="hero-top">
             <div class="hero-info">
@@ -282,8 +279,7 @@ function renderFocusNode() {
 
     if (panel) panel.innerHTML = h;
 
-    // Breakdown section
-    let b = '<div class="card-title" style="display:flex;justify-content:space-between;align-items:center"><span>MODEL TELEMETRY</span><button class="action-btn ghost" style="padding:2px 8px;font-size:9px" onclick="openAllModels()">ALL MODELS</button></div>';
+    let b = '<div class="card-title" style="display:flex;justify-content:space-between;align-items:center"><span>MODEL TELEMETRY</span><button class="action-btn ghost" style="padding:2px 8px;font-size:9px" onclick="openAllModels()">ALL MODELS (' + mCount + ')</button></div>';
 
     if (mCount > 0 && !isErr) {
         b += '<div class="model-bars">';
@@ -308,7 +304,7 @@ function renderFocusNode() {
             sonnet: { match: (n) => n.includes('sonnet'), found: null, score: -1 },
             pro: { match: (n) => n.includes('gemini') && n.includes('pro'), found: null, score: -1 },
             flash: { match: (n) => n.includes('gemini') && n.includes('flash'), found: null, score: -1 },
-            gpt: { match: (n) => n.includes('gpt') || n.includes('oss'), found: null, score: -1 }
+            gpt: { match: (n) => n.includes('gpt') || n.includes('oss') || n.includes('o1') || n.includes('o3'), found: null, score: -1 }
         };
 
         acc.quota.models.forEach(m => {
@@ -395,7 +391,6 @@ function selectNode(id) {
     renderAll();
 }
 
-// Actions
 function doSwitch(id, em) { vscode.postMessage({ command: 'switch', accountId: id, email: em }); }
 function doRefresh(id, silent=false) { vscode.postMessage({ command: 'refresh', accountId: id, silent }); }
 function doRefreshAll() { vscode.postMessage({ command: 'refreshAll' }); }
@@ -413,7 +408,6 @@ function openImportModal() { document.getElementById('importModal').classList.ad
 function closeImportModal() { document.getElementById('importModal').classList.remove('vis'); }
 function submitImport() { const j = document.getElementById('importInput').value.trim(); if(j) vscode.postMessage({ command: 'batchImportTokens', jsonText: j }); closeImportModal(); }
 
-// UI Controls
 function openAllModels() {
     const acc = accounts.find(a => a.id === activeAccountId);
     if (!acc || !acc.quota || !acc.quota.models) return;
@@ -449,12 +443,12 @@ function closeAllModels() {
 // Groups
 function getAllModels() { 
     const m=[]; 
-    accounts.forEach(a=>{
-        if(a.quota&&a.quota.models) {
-            a.quota.models.forEach(x=>{
-                if(!m.find(y=>y.name===x.name)) m.push({name:x.name, resetTime:x.reset_time_raw||x.reset_time||''});
-            });
-        }
+    accounts.forEach(a=>{\
+        if(a.quota&&a.quota.models) {\
+            a.quota.models.forEach(x=>{\
+                if(!m.find(y=>y.name===x.name)) m.push({name:x.name, resetTime:x.reset_time_raw||x.reset_time||''});\
+            });\
+        }\
     }); 
     return m; 
 }
@@ -467,6 +461,10 @@ function getGroupScopeModels() {
         }
     }
     return getAllModels();
+}
+
+function changeModelScope(val) {
+    setGroupModelScope(val);
 }
 
 function setGroupModelScope(val) {
@@ -505,9 +503,9 @@ function renderGroupsList() {
     c.innerHTML = groupsConfig.groups.map(g => '<div class="gc"><div class="gc-head">'
         + '<input type="text" class="gc-input" value="' + g.name + '" onchange="updateGroupName(\\'' + g.id + '\\',this.value)" onclick="event.stopPropagation()">'
         + '<button class="action-btn danger ghost" style="padding:4px 8px;font-size:10px" onclick="deleteGroup(\\'' + g.id + '\\')">DEL</button></div>'
-        + '<div class="gc-tags">' + g.models.map(mn => '<span class="gc-tag">' + getDisplayName(mn) + '<span class="gc-rm" onclick="removeModelFromGroup(\\'' + g.id + '\\',\\'' + mn + '\\')">&times;</span></span>').join('')
+        + '<div class="gc-tags">' + g.models.map(mn => '<span class="gc-tag">' + getDisplayName(mn) + '<span class="gc-rm" onclick="removeModelFromGroup(\\'' + g.id + '\\',\\'' + mn + '\\')">×</span></span>').join('')
         + '<button class="gc-add" onclick="toggleDD(\\'' + g.id + '\\',event)">+ ADD</button>'
-        + '<div class="gc-dd" id="dd-' + g.id + '">' + all.filter(m => !g.models.includes(m.name)).map(m => '<div class="gc-dd-item' + (used.has(m.name)&&!g.models.includes(m.name)?' disabled':'') + '" onclick="' + (used.has(m.name)&&!g.models.includes(m.name)?'':(\"addModelToGroup('\"+g.id+\"','\"+m.name+\"')\")) + '">' + getDisplayName(m.name) + '</div>').join('') + '</div>'
+        + '<div class="gc-dd" id="dd-' + g.id + '">' + all.filter(m => !g.models.includes(m.name)).map(m => '<div class="gc-dd-item' + (used.has(m.name)&&!g.models.includes(m.name)?' disabled':'') + '" onclick="' + (used.has(m.name)&&!g.models.includes(m.name)?'':("addModelToGroup('"+g.id+"','"+m.name+"')")) + '">' + getDisplayName(m.name) + '</div>').join('') + '</div>'
         + '</div></div>').join('');
 }
 
@@ -522,7 +520,6 @@ function toggleDD(gid, ev) {
 }
 document.addEventListener('click', () => { document.querySelectorAll('.gc-dd').forEach(d => d.classList.remove('show')); });
 
-// Init
 setTimeout(() => {
     renderAll();
     const sel = document.getElementById('autoRefreshGlobal');
