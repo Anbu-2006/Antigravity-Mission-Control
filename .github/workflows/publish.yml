@@ -31,13 +31,19 @@ jobs:
 
       # Publish to Open VSX Registry (Trusted Publishing via OIDC or fallback PAT)
       - name: Publish to Open VSX Registry
+        continue-on-error: true
         env:
           OPEN_VSX_TOKEN: ${{ secrets.OPEN_VSX_TOKEN }}
+          OVSX_PAT: ${{ secrets.OVSX_PAT }}
+          OPENVSX_TOKEN: ${{ secrets.OPENVSX_TOKEN }}
         run: |
-          if [ -n "$OPEN_VSX_TOKEN" ]; then
-            npx ovsx publish *.vsix --pat "$OPEN_VSX_TOKEN"
+          TOKEN="${OPEN_VSX_TOKEN:-${OVSX_PAT:-$OPENVSX_TOKEN}}"
+          if [ -n "$TOKEN" ]; then
+            echo "Publishing to Open VSX with Personal Access Token..."
+            npx ovsx publish *.vsix --pat "$TOKEN"
           else
-            npx ovsx publish *.vsix
+            echo "Publishing to Open VSX using Trusted Publishing (OIDC)..."
+            npx ovsx publish *.vsix --trusted-publishing || npx ovsx publish *.vsix
           fi
 
       # Publish to VS Code Marketplace (official) - only if VSCE_PAT is set
