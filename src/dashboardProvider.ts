@@ -9,8 +9,7 @@ export class DashboardProvider {
     public static readonly viewType = 'antigravityDashboard';
     private static _currentPanel: DashboardProvider | undefined;
 
-    // Persisted StatusGator cache — so the HTML can be seeded correctly even if
-    // the dashboard wasn't open when the first fetch completed.
+    // Persisted StatusGator cache
     public static cachedServiceStatus: { status: string; label: string; reports: string; fetchedAt: number } = {
         status: 'UNKNOWN', label: 'Fetching status...', reports: '', fetchedAt: 0
     };
@@ -78,9 +77,8 @@ export class DashboardProvider {
         this._update();
         this._panel.onDidDispose(() => this.dispose(), null, this._disposables);
 
-        // 监听配置变化（特别是语言切换），实时刷新界面以应用新翻译
         vscode.workspace.onDidChangeConfiguration(e => {
-            if (e.affectsConfiguration('antigravity-mission-hub.language')) {
+            if (e.affectsConfiguration('antigravity-mission-hub.language') || e.affectsConfiguration('antigravity-mission-hub.autoRefreshInterval')) {
                 this._update();
             }
         }, null, this._disposables);
@@ -118,7 +116,6 @@ export class DashboardProvider {
                             try {
                                 const axios = require('axios');
 
-                                // Step 1: GET the page to extract CSRF token
                                 const getRes = await axios.get(SG_URL, {
                                     headers: {
                                         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
@@ -132,7 +129,6 @@ export class DashboardProvider {
                                 const csrfMatch = (getRes.data as string).match(/name=["']csrf-token["']\s+content=["']([^"']+)["']/i);
                                 const csrfToken = csrfMatch ? csrfMatch[1] : '';
 
-                                // Step 2: Pass token back to webview to do the actual form POST natively
                                 if (DashboardProvider._currentPanel) {
                                     DashboardProvider._currentPanel._panel.webview.postMessage({
                                         command: 'doSgPost',
@@ -141,7 +137,6 @@ export class DashboardProvider {
                                     });
                                 }
                             } catch (err: any) {
-                                // If token fetch fails, just simulate success to keep UI smooth
                                 if (DashboardProvider._currentPanel) {
                                     DashboardProvider._currentPanel._panel.webview.postMessage({
                                         command: 'reportResult',
@@ -173,7 +168,6 @@ export class DashboardProvider {
 
                         // === 分组管理相关命令 ===
                         case 'getGroupsConfig':
-                            // 获取当前分组配置
                             const config = ModelGroupManager.loadGroups();
                             this._panel.webview.postMessage({
                                 command: 'groupsConfig',
@@ -182,7 +176,6 @@ export class DashboardProvider {
                             return;
 
                         case 'autoGroup':
-                            // 自动分组
                             const models: ModelInfo[] = message.models || [];
                             const autoGroups = ModelGroupManager.autoGroup(models);
                             let autoConfig = ModelGroupManager.loadGroups();
@@ -198,7 +191,6 @@ export class DashboardProvider {
                             return;
 
                         case 'addGroup':
-                            // 添加新分组
                             let addConfig = ModelGroupManager.loadGroups();
                             const newGroup = ModelGroupManager.createGroup(message.groupName || '新分组');
                             addConfig = ModelGroupManager.addGroup(addConfig, newGroup);
@@ -210,7 +202,6 @@ export class DashboardProvider {
                             return;
 
                         case 'deleteGroup':
-                            // 删除分组
                             let deleteConfig = ModelGroupManager.loadGroups();
                             deleteConfig = ModelGroupManager.deleteGroup(deleteConfig, message.groupId);
                             ModelGroupManager.saveGroups(deleteConfig);
@@ -221,7 +212,6 @@ export class DashboardProvider {
                             return;
 
                         case 'updateGroupName':
-                            // 更新分组名称
                             let renameConfig = ModelGroupManager.loadGroups();
                             renameConfig = ModelGroupManager.updateGroup(renameConfig, message.groupId, { name: message.newName });
                             ModelGroupManager.saveGroups(renameConfig);
@@ -232,7 +222,6 @@ export class DashboardProvider {
                             return;
 
                         case 'addModelToGroup':
-                            // 向分组添加模型
                             let addModelConfig = ModelGroupManager.loadGroups();
                             addModelConfig = ModelGroupManager.addModelToGroup(addModelConfig, message.groupId, message.modelName);
                             ModelGroupManager.saveGroups(addModelConfig);
@@ -243,7 +232,6 @@ export class DashboardProvider {
                             return;
 
                         case 'removeModelFromGroup':
-                            // 从分组移除模型
                             let removeModelConfig = ModelGroupManager.loadGroups();
                             removeModelConfig = ModelGroupManager.removeModelFromGroup(removeModelConfig, message.groupId, message.modelName);
                             ModelGroupManager.saveGroups(removeModelConfig);
@@ -254,30 +242,25 @@ export class DashboardProvider {
                             return;
 
                         case 'saveGroups':
-                            // 直接保存完整分组配置
                             ModelGroupManager.saveGroups(message.config);
                             vscode.commands.executeCommand('antigravity-mission-hub.refreshStatusBar');
                             vscode.window.showInformationMessage(t('configSaved'));
                             return;
 
                         case 'updateAutoRefreshInterval':
-                            // Update the global configuration which triggers setupAutoRefresh in extension.ts
                             vscode.workspace.getConfiguration('antigravity-mission-hub').update('autoRefreshInterval', parseInt(message.interval), vscode.ConfigurationTarget.Global);
                             return;
 
-
                         case 'updateUiState':
-                            // 持久化 UI 状态到索引文件
                             const uiIndex = AccountManager.loadIndex();
                             uiIndex.ui_state = { ...uiIndex.ui_state, ...message.state };
                             AccountManager.saveIndex(uiIndex);
                             return;
 
-                        // === Requirement 5: Safe Clean - Reset corrupted agent trajectories & session cache ===
-                        case 'safeClean':
-                            const confirmClean = await vscode.window.showWarningMessage(
+                        // === Safe Clean: Reset corrupted agent trajectories & session cache ===
+                        case 'safeClean': {
+                            const confirmClean = await vscode.window.showInformationMessage(
                                 'Safe Clean: This will reset corrupted agent sessions, purge IDE session cache, and remove temporary agent trajectory folders (.antigravity/, .jetski/). Your code files will NOT be affected.',
-                                { modal: true },
                                 'Clean Now',
                                 'Cancel'
                             );
@@ -301,57 +284,73 @@ export class DashboardProvider {
                             const path = require('path');
 
                             if (workspaceFolders && workspaceFolders.length > 0) {
-                                const rootPath = workspaceFolders[0].uri.fsPath;
-                                const cleanTargets = ['.antigravity', '.jetski'];
+                                for (const folder of workspaceFolders) {
+                                    const rootPath = folder.uri.fsPath;
+                                    const cleanTargets = ['.antigravity', '.jetski'];
 
-                                for (const dir of cleanTargets) {
-                                    const fullPath = path.join(rootPath, dir);
-                                    if (fs.existsSync(fullPath)) {
-                                        try {
-                                            fs.rmSync(fullPath, { recursive: true, force: true });
-                                            cleanedCount++;
-                                            console.log(`[Safe Clean] Removed: ${fullPath}`);
-                                        } catch (cleanErr: any) {
-                                            console.error(`[Safe Clean] Failed to remove ${fullPath}:`, cleanErr);
+                                    for (const dir of cleanTargets) {
+                                        const fullPath = path.join(rootPath, dir);
+                                        if (fs.existsSync(fullPath)) {
+                                            try {
+                                                fs.rmSync(fullPath, { recursive: true, force: true });
+                                                cleanedCount++;
+                                                console.log(`[Safe Clean] Removed: ${fullPath}`);
+                                            } catch (cleanErr: any) {
+                                                console.error(`[Safe Clean] Failed to remove ${fullPath}:`, cleanErr);
+                                            }
                                         }
                                     }
-                                }
 
-                                try {
-                                    const gitConfigPath = path.join(rootPath, '.git', 'config');
-                                    if (fs.existsSync(gitConfigPath)) {
-                                        let configContent = fs.readFileSync(gitConfigPath, 'utf8');
-                                        let needsSave = false;
+                                    try {
+                                        const gitConfigPath = path.join(rootPath, '.git', 'config');
+                                        if (fs.existsSync(gitConfigPath)) {
+                                            let configContent = fs.readFileSync(gitConfigPath, 'utf8');
+                                            let needsSave = false;
 
-                                        if (configContent.includes('worktreeConfig = true')) {
-                                            configContent = configContent.replace(/\s*worktreeConfig\s*=\s*true/gi, '');
-                                            needsSave = true;
-                                            console.log('[Safe Clean] Removed worktreeConfig = true from Git config');
+                                             if (configContent.includes('worktreeConfig = true')) {
+                                                configContent = configContent.replace(/\s*worktreeConfig\s*=\s*true/gi, '');
+                                                needsSave = true;
+                                            }
+
+                                            if (configContent.match(/repositoryformatversion\s*=\s*[1-9]\d*/i)) {
+                                                configContent = configContent.replace(/(repositoryformatversion\s*=\s*)[1-9]\d*/gi, '$10');
+                                                needsSave = true;
+                                            }
+
+                                            if (needsSave) {
+                                                fs.writeFileSync(gitConfigPath, configContent, 'utf8');
+                                                gitFixed = true;
+                                            }
                                         }
-
-                                        if (configContent.match(/repositoryformatversion\s*=\s*[1-9]\d*/i)) {
-                                            configContent = configContent.replace(/(repositoryformatversion\s*=\s*)[1-9]\d*/gi, '$10');
-                                            needsSave = true;
-                                            console.log('[Safe Clean] Downgraded repositoryformatversion to 0');
-                                        }
-
-                                        if (needsSave) {
-                                            fs.writeFileSync(gitConfigPath, configContent, 'utf8');
-                                            gitFixed = true;
-                                        }
+                                    } catch (gitErr) {
+                                        console.error('[Safe Clean] Git config patch failed:', gitErr);
                                     }
-                                } catch (gitErr) {
-                                    console.error('[Safe Clean] Git config patch failed:', gitErr);
                                 }
                             }
+
+                            try {
+                                const { getAllVSCDBPaths } = require('./constants');
+                                const allPaths = getAllVSCDBPaths();
+                                const nukeList = ['Local Storage', 'IndexedDB', 'Partitions', 'Session Storage', 'Cache', 'Code Cache', 'DawnCache', 'GPUCache'];
+                                for (const dbp of allPaths) {
+                                    const root = path.join(dbp, '..', '..', '..');
+                                    for (const d of nukeList) {
+                                        const target = path.join(root, d);
+                                        if (fs.existsSync(target)) {
+                                            try { fs.rmSync(target, { recursive: true, force: true }); } catch (e) {}
+                                        }
+                                    }
+                                }
+                            } catch (e) {}
 
                             this._update();
                             const parts: string[] = ['Session & quota cache purged.'];
                             if (cleanedCount > 0) { parts.push(`${cleanedCount} agent folder(s) removed.`); }
                             if (gitFixed) { parts.push('Git config conflicts resolved.'); }
-                            parts.push('Please restart your agent session.');
+                            parts.push('Ready to use.');
                             vscode.window.showInformationMessage(`Safe Clean complete: ${parts.join(' ')}`);
                             return;
+                        }
                     }
                 } catch (err: any) {
                     console.error('[Cockpit] Webview message handler error:', err);
@@ -380,12 +379,10 @@ export class DashboardProvider {
         const index = AccountManager.loadIndex();
         const groupsConfig = ModelGroupManager.loadGroups();
 
-        // === 第一阶段：立即渲染（使用缓存数据，不发网络请求）===
         const accountsDataPhase1 = index.accounts.map(acc => {
             const fullAcc = AccountManager.loadAccount(acc.id);
             let quota = null;
             if (fullAcc.token) {
-                // 仅读缓存，不发起 API 请求
                 quota = AccountManager.getQuotaFromCache(fullAcc.token.access_token);
             }
             return {
@@ -395,11 +392,8 @@ export class DashboardProvider {
             };
         });
 
-        // 立即渲染界面（当前账号配额通常已被状态栏定时刷新缓存）
         this._panel.webview.html = this._getHtmlForWebview(accountsDataPhase1, groupsConfig, index.ui_state || {});
 
-        // === 第二阶段：后台获取当前账号缺失的配额数据 ===
-        // 仅对当前账号发起 API 请求，非当前账号保持 null（显示"待刷新"提示）
         const currentAccMissing = accountsDataPhase1.find(acc => acc.isCurrent && acc.token && !acc.quota);
         if (currentAccMissing) {
             const accountsDataPhase2 = await Promise.all(index.accounts.map(async acc => {
@@ -408,17 +402,14 @@ export class DashboardProvider {
                 let quota = null;
                 if (fullAcc.token) {
                     if (isCurrent) {
-                        // 当前账号：发起 API 请求获取最新配额
                         try {
                             quota = await AccountManager.fetchQuotaCached(fullAcc.token.access_token);
                         } catch (e: any) {
                             if (e.response && e.response.status === 401) {
-                                // 发现 401 自动触发状态栏的刷新逻辑（含 Token 自动刷新）
                                 vscode.commands.executeCommand('antigravity-mission-hub.refreshStatusBar');
                             }
                         }
                     } else {
-                        // 非当前账号：仅读缓存，无缓存保持 null（显示友好提示）
                         quota = AccountManager.getQuotaFromCache(fullAcc.token.access_token);
                     }
                 }
@@ -429,7 +420,6 @@ export class DashboardProvider {
                 };
             }));
 
-            // 通过 postMessage 推送更新数据，前端 JS 动态刷新
             this._panel.webview.postMessage({
                 command: 'updateAccounts',
                 accounts: accountsDataPhase2
@@ -437,16 +427,12 @@ export class DashboardProvider {
         }
     }
 
-    /**
-     * 采集当前所有账号的最新状态并推送到前端
-     */
     private _postState() {
         const index = AccountManager.loadIndex();
         const accountsData = index.accounts.map(acc => {
             const fullAcc = AccountManager.loadAccount(acc.id);
             let quota = null;
             if (fullAcc.token) {
-                // 仅读缓存
                 quota = AccountManager.getQuotaFromCache(fullAcc.token.access_token);
             }
             return {
@@ -471,7 +457,6 @@ export class DashboardProvider {
         const uiStateJson = JSON.stringify(uiState);
 
         const jsTemplate = getDashboardJsTemplate();
-        // Seed with live cached value so dashboard shows correct status immediately
         const serviceStatusJson = JSON.stringify(DashboardProvider.cachedServiceStatus);
         const jsCode = jsTemplate
             .replace('TRANSLATIONS_PLACEHOLDER', translationsJson)
@@ -491,7 +476,6 @@ export class DashboardProvider {
 *{margin:0;padding:0;box-sizing:border-box}
 body{font-family:'Inter',sans-serif;background:#05070a;color:#cbd5e1;overflow:hidden;height:100vh}
 
-/* Typography & Colors */
 :root {
   --bg: #05070a;
   --panel: #0a0e14;
@@ -509,7 +493,6 @@ body{font-family:'Inter',sans-serif;background:#05070a;color:#cbd5e1;overflow:hi
 
 .cockpit { display: flex; flex-direction: column; height: 100vh; padding: 12px; gap: 12px; }
 
-/* ── NAV ── */
 .nav { display: flex; align-items: center; justify-content: space-between; padding: 10px 20px; background: rgba(10,14,20,0.8); border: 1px solid var(--panel-border); border-radius: 12px; backdrop-filter: blur(10px); flex-shrink: 0; }
 .nav-brand { font-family: var(--font-cyber); font-weight: 900; color: var(--gold); display: flex; align-items: center; gap: 10px; font-size: 15px; letter-spacing: 2px; white-space: nowrap; }
 .logo-shield { width: 22px; height: 22px; background: var(--gold); clip-path: polygon(50% 0%, 100% 25%, 100% 75%, 50% 100%, 0% 75%, 0% 25%); box-shadow: 0 0 10px var(--gold-glow); flex-shrink: 0; }
@@ -518,7 +501,6 @@ body{font-family:'Inter',sans-serif;background:#05070a;color:#cbd5e1;overflow:hi
 .nav-btn:hover { background: rgba(255,255,255,0.05); border-color: rgba(255,255,255,0.2); }
 .nav-btn .icon { color: var(--gold); }
 
-/* ── BENTO LAYOUT ── */
 .bento-layout { display: grid; grid-template-columns: 1.4fr 1fr; gap: 12px; flex: 1; min-height: 0; overflow: hidden; }
 .bento-left { display: flex; flex-direction: column; gap: 12px; height: 100%; overflow-y: auto; overflow-x: hidden; padding-right: 4px; }
 .bento-right { display: flex; flex-direction: column; gap: 12px; height: 100%; overflow-y: auto; overflow-x: hidden; padding-right: 4px; }
@@ -528,7 +510,6 @@ body{font-family:'Inter',sans-serif;background:#05070a;color:#cbd5e1;overflow:hi
 
 .card-title { font-family: var(--font-cyber); font-size: 10px; color: var(--gold); letter-spacing: 2px; margin-bottom: 14px; font-weight: 700; text-shadow: 0 0 10px var(--gold-glow); }
 
-/* ── FOCUS NODE (HERO) ── */
 .hero-top { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 20px; gap: 10px; }
 .hero-info { flex: 1; min-width: 0; }
 .hero-name { font-size: 22px; font-weight: 800; color: #fff; letter-spacing: -0.5px; margin-bottom: 4px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
@@ -549,7 +530,6 @@ body{font-family:'Inter',sans-serif;background:#05070a;color:#cbd5e1;overflow:hi
 .m-bar-fill { height: 100%; border-radius: 4px; box-shadow: 0 0 10px currentColor; transition: width 0.4s ease; }
 .m-bar-sub { display: flex; justify-content: space-between; font-size: 9px; color: var(--text-muted); font-family: monospace; letter-spacing: 0.3px; text-transform: uppercase; }
 
-/* ── FLEET TOPOLOGY (VERTICAL) ── */
 .topology-vertical { display: flex; flex-direction: column; gap: 10px; flex: 1; overflow-y: auto; padding: 2px; }
 .t-node-v { display: flex; align-items: center; gap: 15px; padding: 12px; border-radius: 10px; background: rgba(0,0,0,0.5); border: 1px solid rgba(255,255,255,0.1); cursor: pointer; transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1); position: relative; }
 .t-node-v:hover { transform: translateX(5px); border-color: var(--gold); background: rgba(212,168,67,0.1); }
@@ -560,17 +540,6 @@ body{font-family:'Inter',sans-serif;background:#05070a;color:#cbd5e1;overflow:hi
 .t-email { font-size: 10px; color: var(--text-muted); font-family: monospace; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .t-indicator { position: absolute; top: 0px; right: -2px; width: 8px; height: 8px; border-radius: 50%; border: 1px solid #000; }
 
-/* ── TRAFFIC NETWORK ── */
-.traffic-list { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
-.traffic-item { background: rgba(0,0,0,0.4); border: 1px solid rgba(255,255,255,0.05); border-radius: 8px; padding: 10px 12px; display: flex; justify-content: space-between; align-items: center; }
-.traffic-name { font-family: var(--font-cyber); font-size: 10px; color: #fff; }
-.traffic-badge { font-size: 9px; font-weight: 700; padding: 3px 7px; border-radius: 4px; letter-spacing: 1px; font-family: monospace; }
-.tb-clear { background: rgba(0,255,102,0.1); color: var(--green); border: 1px solid var(--green); }
-.tb-throttle { background: rgba(255,42,42,0.1); color: var(--red); border: 1px solid var(--red); animation: pulse-red 2s infinite; }
-
-@keyframes pulse-red { 0% { box-shadow: 0 0 0 0 rgba(255,42,42,0.4); } 70% { box-shadow: 0 0 0 6px rgba(255,42,42,0); } 100% { box-shadow: 0 0 0 0 rgba(255,42,42,0); } }
-
-/* ── BUTTONS & UI ── */
 .action-btn { background: rgba(212,168,67,0.15); border: 1px solid var(--gold); color: var(--gold); padding: 6px 14px; border-radius: 8px; font-weight: 700; font-family: 'Inter'; cursor: pointer; transition: all 0.2s; text-transform: uppercase; font-size: 10px; letter-spacing: 1px; white-space: nowrap; }
 .action-btn:hover { background: var(--gold); color: #000; box-shadow: 0 0 15px var(--gold-glow); }
 .action-btn.ghost { background: transparent; border-color: rgba(255,255,255,0.2); color: var(--text-main); }
@@ -580,13 +549,11 @@ body{font-family:'Inter',sans-serif;background:#05070a;color:#cbd5e1;overflow:hi
 
 @keyframes pulse { 0% { box-shadow: 0 0 0 0 rgba(0,255,102,0.4); } 70% { box-shadow: 0 0 0 6px rgba(0,255,102,0); } 100% { box-shadow: 0 0 0 0 rgba(0,255,102,0); } }
 
-/* ── SCROLLBAR ── */
 ::-webkit-scrollbar { width: 4px; }
 ::-webkit-scrollbar-track { background: transparent; }
 ::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.1); border-radius: 2px; }
 ::-webkit-scrollbar-thumb:hover { background: var(--gold); }
 
-/* ── MODALS ── */
 .overlay { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.8); z-index: 1000; justify-content: center; align-items: center; backdrop-filter: blur(8px); }
 .overlay.vis { display: flex; }
 .modal { background: #0a0e14; border: 1px solid var(--gold); border-radius: 16px; width: 90%; max-width: 480px; box-shadow: 0 0 40px rgba(0,0,0,0.8), inset 0 0 20px rgba(212,168,67,0.1); display: flex; flex-direction: column; }
@@ -599,7 +566,6 @@ body{font-family:'Inter',sans-serif;background:#05070a;color:#cbd5e1;overflow:hi
 .modal textarea:focus { border-color: var(--gold); box-shadow: 0 0 10px var(--gold-glow); }
 .modal-f { padding: 16px 20px; border-top: 1px solid rgba(255,255,255,0.05); display: flex; justify-content: flex-end; gap: 10px; }
 
-/* Groups */
 .gc{background:rgba(0,0,0,0.4);border:1px solid rgba(255,255,255,0.05);border-radius:8px;padding:12px;margin-bottom:8px}
 .gc-head{display:flex;justify-content:space-between;align-items:center;margin-bottom:8px}
 .gc-input{background:transparent;border:none;border-bottom:1px solid rgba(255,255,255,0.2);color:#fff;font-size:14px;font-weight:700;padding:4px 0;width:200px;outline:none;font-family:var(--font-cyber)}
@@ -615,7 +581,6 @@ body{font-family:'Inter',sans-serif;background:#05070a;color:#cbd5e1;overflow:hi
 .gc-dd-item:hover{background:rgba(212,168,67,0.2);color:var(--gold)}
 .gc-dd-item.disabled{opacity:0.3;cursor:not-allowed}
 
-/* ── STATUSGATOR WIDGET ── */
 .sg-status-wrap { display: flex; align-items: center; gap: 16px; padding: 10px 4px; }
 .sg-orb-wrap { flex-shrink: 0; width: 44px; height: 44px; display: flex; align-items: center; justify-content: center; }
 .sg-orb { width: 22px; height: 22px; border-radius: 50%; }
@@ -631,14 +596,6 @@ body{font-family:'Inter',sans-serif;background:#05070a;color:#cbd5e1;overflow:hi
 .sg-pulse-gold { animation: sg-pulse-gold-anim 1.5s ease-in-out infinite; }
 .sg-pulse-red { animation: sg-pulse-red-anim 1s ease-in-out infinite; }
 
-/* ── STATUSGATOR REPORT PANEL ── */
-.sg-report-panel { display: flex; flex-direction: column; gap: 4px; min-width: 120px; max-width: 128px; padding: 2px 0; border-left: 1px solid rgba(255,255,255,0.06); padding-left: 8px; }
-.sg-report-title { font-family: var(--font-cyber); font-size: 8px; color: var(--gold); letter-spacing: 1.2px; padding-bottom: 3px; }
-.sg-report-btn { background: rgba(255,255,255,0.04); border: 1px solid rgba(255,255,255,0.1); color: var(--text-muted); border-radius: 5px; padding: 4px 6px; font-size: 9px; font-family: monospace; cursor: pointer; text-align: left; transition: all 0.18s; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.sg-report-btn:hover { background: rgba(212,168,67,0.12); border-color: var(--gold); color: var(--gold); transform: translateX(2px); }
-.sg-report-btn:disabled { opacity: 0.7; cursor: wait; transform: none; }
-.sg-report-btn-flash { background: rgba(212,168,67,0.25) !important; border-color: var(--gold) !important; color: var(--gold) !important; }
-
 </style>
 </head>
 <body>
@@ -651,42 +608,27 @@ body{font-family:'Inter',sans-serif;background:#05070a;color:#cbd5e1;overflow:hi
             <button class="nav-btn" onclick="doBatchExport()"><span class="icon">↗</span> Export</button>
             <button class="nav-btn" onclick="openImportModal()"><span class="icon">↙</span> Import</button>
             <button class="nav-btn" onclick="openGroups()"><span class="icon">⚙</span> Groups</button>
-            <button class="nav-btn" onclick="doSafeClean()" title="Delete .antigravity/ and .jetski/ folders in project root to reset corrupted agent sessions"><span class="icon">🧹</span> Safe Clean</button>
+            <button class="nav-btn" onclick="doSafeClean()" title="Reset corrupted agent sessions and purge cache"><span class="icon">🧹</span> Safe Clean</button>
         </div>
     </div>
 
     <div class="bento-layout">
         <div class="bento-left">
-            <!-- Main Focus Node -->
-            <div class="bento-card focus-node" id="focusNode">
-                <!-- Populated via JS -->
-            </div>
-
-            <!-- Active Models breakdown -->
-            <div class="bento-card models-breakdown" id="modelsBreakdown" style="position:relative; flex:1; min-height:120px;">
-                <!-- Populated via JS -->
-            </div>
-
-            <!-- StatusGator: Real-time Google Antigravity Service Health -->
+            <div class="bento-card focus-node" id="focusNode"></div>
+            <div class="bento-card models-breakdown" id="modelsBreakdown" style="position:relative; flex:1; min-height:120px;"></div>
             <div class="bento-card traffic-network" id="trafficNetwork" style="display:flex;flex-direction:column;">
                 <div class="card-title" style="display:flex;justify-content:space-between;align-items:center;flex-shrink:0">
                     <span>SERVER STATUS</span>
                     <span style="font-size:9px;color:var(--text-muted);font-family:monospace;letter-spacing:0">via StatusGator</span>
                 </div>
                 <div style="display:flex;flex:1;justify-content:space-between;min-height:0;align-items:center;padding-left:10px;padding-right:5px;">
-                    <!-- Left: Live status orb -->
                     <div id="trafficStatusList" style="display:flex;align-items:center;"></div>
-                    <!-- Right: API Status panel -->
                     <div class="api-status-panel" style="display:flex; flex-direction:column; gap:8px; padding-left:15px; border-left:1px solid rgba(255,255,255,0.1); width:150px; justify-content:center; flex-shrink:0;">
                         <div style="font-size:9px; color:var(--text-muted); letter-spacing:1px; margin-bottom:2px;">LIVE OUTAGE STATUS</div>
-                        
-                        <!-- Gemini Status -->
                         <div style="display:flex; justify-content:space-between; font-size:11px; align-items:center;">
                             <span style="color:var(--text-primary); font-family:monospace; font-weight:600;">GEMINI</span>
                             <span id="gemini-status-badge"></span>
                         </div>
-
-                        <!-- Anthropic Status -->
                         <div style="display:flex; justify-content:space-between; font-size:11px; align-items:center;">
                             <span style="color:var(--text-primary); font-family:monospace; font-weight:600;">ANTHROPIC</span>
                             <span id="anthropic-status-badge"></span>
@@ -697,7 +639,6 @@ body{font-family:'Inter',sans-serif;background:#05070a;color:#cbd5e1;overflow:hi
         </div>
 
         <div class="bento-right">
-            <!-- Fleet Grid (Only thing on the right) -->
             <div class="bento-card fleet-grid" style="flex:1;">
                 <div class="card-title" style="display:flex;justify-content:space-between;align-items:center">
                     <span>ACCOUNT FLEET (<span id="fleetCount">0</span>)</span>
@@ -712,15 +653,12 @@ body{font-family:'Inter',sans-serif;background:#05070a;color:#cbd5e1;overflow:hi
                         <button class="action-btn ghost" style="padding:4px 10px;font-size:10px" onclick="doRefreshAll()">⟳ REFRESH ALL</button>
                     </div>
                 </div>
-                <div class="topology-vertical" id="topology" style="flex:1;">
-                    <!-- Nodes populated via JS -->
-                </div>
+                <div class="topology-vertical" id="topology" style="flex:1;"></div>
             </div>
         </div>
     </div>
 </div>
 
-<!-- Modals (Token, Import, Groups) -->
 <div class="overlay" id="tokenModal">
   <div class="modal">
     <div class="modal-h"><h2>ADD TOKEN</h2><button class="modal-x" onclick="closeTokenModal()">&times;</button></div>
@@ -736,8 +674,8 @@ body{font-family:'Inter',sans-serif;background:#05070a;color:#cbd5e1;overflow:hi
   <div class="modal">
     <div class="modal-h"><h2>BATCH IMPORT</h2><button class="modal-x" onclick="closeImportModal()">&times;</button></div>
     <div class="modal-b">
-      <div class="tip">Paste accounts JSON to import multiple accounts at once.</div>
-      <textarea id="importInput" placeholder='{"version":1,"accounts":[...]}'></textarea>
+      <div class="tip">Paste accounts JSON or array to import multiple accounts at once.</div>
+      <textarea id="importInput" placeholder='[{"email":"...","refresh_token":"..."}]'></textarea>
     </div>
     <div class="modal-f"><button class="action-btn ghost" onclick="closeImportModal()">CANCEL</button><button class="action-btn" onclick="submitImport()">IMPORT</button></div>
   </div>
@@ -776,14 +714,7 @@ body{font-family:'Inter',sans-serif;background:#05070a;color:#cbd5e1;overflow:hi
 <div id="globalDDs"></div>
 
 <script>${jsCode}</script>
-<script>
-// Initialize the UI elements
-document.addEventListener('DOMContentLoaded', function() {
-    // Other initialization...
-});
-</script>
 </body>
 </html>`;
     }
 }
-
