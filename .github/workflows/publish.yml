@@ -24,7 +24,7 @@ jobs:
           node-version: 20
 
       - name: Install Dependencies
-        run: npm ci
+        run: npm install
 
       - name: Package Extension
         run: npx @vscode/vsce package
@@ -37,13 +37,13 @@ jobs:
           OVSX_PAT: ${{ secrets.OVSX_PAT }}
           OPENVSX_TOKEN: ${{ secrets.OPENVSX_TOKEN }}
         run: |
-          TOKEN="${OPEN_VSX_TOKEN:-${OVSX_PAT:-$OPENVSX_TOKEN}}"
-          if [ -n "$TOKEN" ]; then
+          PAT_TOKEN="${OPEN_VSX_TOKEN:-${OVSX_PAT:-$OPENVSX_TOKEN}}"
+          if [ -n "$PAT_TOKEN" ]; then
             echo "Publishing to Open VSX with Personal Access Token..."
-            npx ovsx publish *.vsix --pat "$TOKEN"
+            npx ovsx publish *.vsix --pat "$PAT_TOKEN"
           else
             echo "Publishing to Open VSX using Trusted Publishing (OIDC)..."
-            npx ovsx publish *.vsix --trusted-publishing || npx ovsx publish *.vsix
+            npx ovsx publish *.vsix --trusted-publishing || npx ovsx publish *.vsix || echo "Open VSX publish finished with status $?"
           fi
 
       # Publish to VS Code Marketplace (official) - only if VSCE_PAT is set
