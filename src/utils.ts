@@ -104,7 +104,6 @@ export function getModelDisplayName(name: string): string {
 
     let formatted = n;
     if (lower.startsWith('gemini')) {
-        // Normalize version like 3-1 to 3.1
         const normalized = n.replace(/gemini-(\d+)-(\d+)/i, 'gemini-$1.$2');
         const parts = normalized.split('-');
         const capParts = parts.map((part, idx) => {
@@ -124,7 +123,6 @@ export function getModelDisplayName(name: string): string {
             .replace(/\s+\(/g, ' (')
             .replace(/\s+/g, ' ');
     } else if (lower.startsWith('claude')) {
-        // Normalize version like 4-6 to 4.6 or 5-5 to 5.5
         const normalized = n.replace(/claude-(opus|sonnet|haiku)-(\d+)-(\d+)/i, 'claude-$1-$2.$3')
                             .replace(/claude-(\d+)-(\d+)/i, 'claude-$1.$2');
         const parts = normalized.split('-');
@@ -160,13 +158,25 @@ export function getModelDisplayName(name: string): string {
 
 /**
  * Sanitizes and extracts refresh tokens from raw input
- * - Removes surrounding single/double/backtick quotes
+ * - Strips invisible zero-width unicode characters (\u200B, \uFEFF, \u00A0, etc.)
+ * - Decodes URL-encoded refresh tokens (e.g. 1%2F%2F...)
+ * - Removes surrounding single/double/smart quotes
  * - Extracts token from JSON snippets (e.g., {"refresh_token": "..."})
- * - Strips all internal whitespace, newlines, and carriage returns
+ * - Strips all internal whitespace, newlines, and trailing commas
  */
 export function cleanRefreshToken(input: string): string {
     if (!input) { return ''; }
     let str = input.trim();
+
+    // 1. Strip invisible / zero-width characters
+    str = str.replace(/[\u200B-\u200D\uFEFF\u00A0\u2060\u180E]/g, '');
+
+    // 2. Decode URL encoding if token was encoded
+    if (str.includes('%2F') || str.includes('%2f')) {
+        try { str = decodeURIComponent(str); } catch (e) {}
+    }
+
+    // 3. Extract JSON if token wrapped in JSON object or snippet
     if (str.includes('{') || str.includes('refresh_token')) {
         try {
             const parsed = JSON.parse(str);
@@ -182,10 +192,15 @@ export function cleanRefreshToken(input: string): string {
             }
         }
     }
-    // Remove surrounding quotes if any
-    str = str.replace(/^["'`]|["'`]$/g, '');
-    // Strip all internal whitespace, newlines, carriage returns, tabs
+
+    // 4. Remove smart/curly quotes (“ ” ‘ ’) and standard quotes (' " `)
+    str = str.replace(/^["'`\u201c\u201d\u2018\u2019]+|["'`\u201c\u201d\u2018\u2019]+$/g, '');
+
+    // 5. Strip all internal whitespace, newlines, carriage returns, tabs
     str = str.replace(/\s+/g, '');
+
+    // 6. Strip trailing comma or semicolons
+    str = str.replace(/[,;]+$/, '');
+
     return str;
 }
-
