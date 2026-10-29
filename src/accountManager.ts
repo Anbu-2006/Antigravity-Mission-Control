@@ -7,12 +7,8 @@ import {
     CLIENT_ID,
     CLIENT_SECRET,
     TOKEN_URL,
-    USERINFO_URL,
-    QUOTA_API_URL,
-    LOAD_CODE_ASSIST_URL,
     QUOTA_API_ENDPOINTS,
-    LOAD_CODE_ASSIST_ENDPOINTS,
-    IMPORTANT_MODELS
+    LOAD_CODE_ASSIST_ENDPOINTS
 } from './constants';
 import { cleanRefreshToken } from './utils';
 
@@ -64,14 +60,12 @@ export class AccountManager {
         }
 
         // 自愈机制：检测磁盘账号文件数量 vs 索引条目数
-        // 如果索引缺失严重（磁盘文件比索引多 2 个以上），自动从磁盘重建
         try {
             if (fs.existsSync(ACCOUNTS_DIR)) {
                 const diskFiles = fs.readdirSync(ACCOUNTS_DIR).filter((f: string) => f.endsWith('.json'));
                 if (diskFiles.length > index.accounts.length + 1) {
                     console.warn(`[Cockpit] 索引自愈触发: 索引=${index.accounts.length} 磁盘=${diskFiles.length}, 正在重建...`);
                     const rebuilt = this.rebuildIndexFromDisk(index);
-                    // 写回磁盘持久化重建结果
                     this.saveIndex(rebuilt);
                     return rebuilt;
                 }
@@ -83,10 +77,6 @@ export class AccountManager {
         return index;
     }
 
-    /**
-     * 从 accounts/ 目录扫描磁盘文件重建索引。
-     * 保留原索引的 current_account_id 和 ui_state。
-     */
     private static rebuildIndexFromDisk(existingIndex: AccountIndex): AccountIndex {
         const accountFiles = fs.readdirSync(ACCOUNTS_DIR).filter((f: string) => f.endsWith('.json'));
         const newAccounts: AccountSummary[] = [];
@@ -108,13 +98,11 @@ export class AccountManager {
             }
         }
 
-        // 验证 current_account_id 是否仍然有效
         let currentId = existingIndex.current_account_id;
         if (currentId && !newAccounts.find(a => a.id === currentId)) {
             currentId = newAccounts.length > 0 ? newAccounts[0].id : null;
         }
 
-        console.log(`[Cockpit] 索引自愈完成: 恢复 ${newAccounts.length} 个账号`);
         return {
             accounts: newAccounts,
             current_account_id: currentId,
@@ -128,7 +116,6 @@ export class AccountManager {
             fs.mkdirSync(dir, { recursive: true });
         }
 
-        // 安全校验：如果新索引的账号数量急剧减少（<现有的50%），先备份旧索引
         if (fs.existsSync(ACCOUNTS_INDEX_FILE)) {
             try {
                 const oldIndex: AccountIndex = JSON.parse(fs.readFileSync(ACCOUNTS_INDEX_FILE, 'utf8'));
@@ -137,9 +124,7 @@ export class AccountManager {
                     fs.copyFileSync(ACCOUNTS_INDEX_FILE, backupPath);
                     console.warn(`[Cockpit] 索引安全备份: ${oldIndex.accounts.length} → ${index.accounts.length}, 已备份到 ${backupPath}`);
                 }
-            } catch (e) {
-                // 读取旧索引失败不影响写入
-            }
+            } catch (e) {}
         }
 
         fs.writeFileSync(ACCOUNTS_INDEX_FILE, JSON.stringify(index, null, 2), 'utf8');
@@ -159,8 +144,6 @@ export class AccountManager {
         }
         const file = path.join(ACCOUNTS_DIR, `${account.id}.json`);
         fs.writeFileSync(file, JSON.stringify(account, null, 2), 'utf8');
-
-        // 同步更新索引文件中的摘要信息
         this.updateIndexSummary(account);
     }
 
@@ -187,10 +170,6 @@ export class AccountManager {
         }
     }
 
-    /**
-     * 启动时的静默对账机制，确保索引与物理文件 100% 同步
-     * (与 loadIndex 自愈形成互补：差距大时信物理文件，差距极小时清木马/死链)
-     */
     static reconcileIndexAtStartup(): void {
         try {
             const index = this.loadIndex();
@@ -204,7 +183,6 @@ export class AccountManager {
                     .forEach((id: string) => actualFiles.add(id));
             }
 
-            // 1. 清理死链 (索引里有，但物理文件没有)
             const validAccounts: AccountSummary[] = [];
             for (const account of index.accounts) {
                 if (actualFiles.has(account.id)) {
@@ -215,7 +193,6 @@ export class AccountManager {
                 }
             }
             
-            // 2. 恢复孤儿账户 (物理文件有，但不在索引里)
             const indexedIds = new Set(validAccounts.map(a => a.id));
             for (const fileId of actualFiles) {
                 if (!indexedIds.has(fileId)) {
@@ -291,7 +268,6 @@ export class AccountManager {
     }
 
     static async fetchQuota(accessToken: string, projectId: string | null = null) {
-        // First fetch project and tier with fallback support
         let finalProjectId = projectId;
         let tier: string | null = null;
 
@@ -306,13 +282,17 @@ export class AccountManager {
                             "Accept": "application/json",
                             "Content-Type": "application/json"
                         },
-                        timeout: 10000
+                        timeout: 15000
                     }
                 );
-                if (loadRes.status === 200) {
-                    finalProjectId = loadRes.data.cloudaicompanionProject || finalProjectId;
-                    tier = (loadRes.data.paidTier && loadRes.data.paidTier.id) || (loadRes.data.currentTier && loadRes.data.currentTier.id);
-                    break; // Success, exit loop
+                if (loadRes.status === 200 && loadRes.data) {
+                    finalProjectId = loadRes.data.cloudaicompanionProject || loadRes.data.project || loadRes.data.projectId || loadRes.data.billingProject || finalProjectId;
+                    tier = (loadRes.data.paidTier && loadRes.data.paidTier.id) 
+                        || (loadRes.data.currentTier && loadRes.data.currentTier.id)
+                        || loadRes.data.userTier 
+                        || loadRes.data.tier 
+                        || (loadRes.data.paidTier ? 'PRO' : null);
+                    break;
                 }
             } catch (e: any) {
                 const status = e.response?.status;
@@ -324,7 +304,7 @@ export class AccountManager {
                     continue;
                 }
                 console.warn(`[Cockpit] Failed to fetch project info at ${ep}`, e.message);
-                break; // Stop for other errors like 403
+                break;
             }
         }
 
@@ -344,7 +324,7 @@ export class AccountManager {
                             "Accept": "application/json",
                             "Content-Type": "application/json"
                         },
-                        timeout: 10000
+                        timeout: 12000
                     }
                 );
                 
@@ -353,7 +333,7 @@ export class AccountManager {
                 }
                 
                 finalResponse = response;
-                break; // Success, exit loop
+                break;
             } catch (quotaErr: any) {
                 const status = quotaErr.response?.status;
                 const statusText = quotaErr.response?.statusText || '';
@@ -375,13 +355,11 @@ export class AccountManager {
                     tier
                 };
 
-                // Fallback logic: check for 429 or 5xx
                 if (status === 429 || (status && status >= 500)) {
                     console.warn(`[Cockpit] Quota API 429/5xx at ${ep}, falling back to next endpoint...`);
                     continue;
                 }
                 
-                // For other errors (e.g., mismatch, 403), don't fallback, just return error
                 console.warn(`[Cockpit] Quota API error at ${ep}: HTTP ${status || 'N/A'} - ${errMsg}`);
                 return lastError;
             }
@@ -396,18 +374,16 @@ export class AccountManager {
 
         for (const [name, info] of Object.entries(modelsData)) {
             const modelInfo = info as any;
-            if (!IMPORTANT_MODELS.some(kw => name.toLowerCase().includes(kw))) {
+            if (!name || name.trim() === '') {
                 continue;
             }
 
             const quotaInfo = modelInfo.quotaInfo || {};
 
-            // 将 UTC 时间转换为本地时区显示格式
             let localResetTime = '';
             if (quotaInfo.resetTime) {
                 try {
                     const resetDate = new Date(quotaInfo.resetTime);
-                    // 使用 zh-CN locale 格式化为本地时间
                     localResetTime = resetDate.toLocaleString('zh-CN', {
                         month: '2-digit',
                         day: '2-digit',
@@ -416,17 +392,17 @@ export class AccountManager {
                         hour12: false
                     });
                 } catch (e) {
-                    localResetTime = quotaInfo.resetTime; // 格式化失败时保留原值
+                    localResetTime = quotaInfo.resetTime;
                 }
             }
 
             models.push({
                 name,
-                percentage: Math.round((quotaInfo.remainingFraction || 0) * 100),
+                percentage: Math.round((quotaInfo.remainingFraction !== undefined ? quotaInfo.remainingFraction : 1) * 100),
                 used: quotaInfo.quotaUsed || 0,
                 limit: quotaInfo.quotaLimit || 0,
                 reset_time: localResetTime,
-                reset_time_raw: quotaInfo.resetTime || "" // 保留原始 UTC 时间供 tooltip 计算使用
+                reset_time_raw: quotaInfo.resetTime || ""
             });
         }
 
@@ -435,19 +411,10 @@ export class AccountManager {
         return { is_forbidden: false, models, tier };
     }
 
-    // --- 配额缓存层 (Anti-Tokenware: 60s min TTL + Exponential Backoff) ---
     private static _quotaCache = new Map<string, { data: any; timestamp: number }>();
-    private static readonly _CACHE_TTL = 60 * 1000; // 60 second minimum TTL to prevent WAF flagging
+    private static readonly _CACHE_TTL = 60 * 1000;
     private static _backoffState = new Map<string, { failures: number; nextRetryAt: number }>();
 
-    /**
-     * 带缓存的配额获取。
-     * Implements exponential backoff with jitter on failures to prevent
-     * background refreshes from being flagged as "non-Antigravity" tool usage.
-     * 
-     * Backoff schedule: 60s → 120s → 240s → 480s (max)
-     * Jitter: ±15% randomization to prevent thundering herd
-     */
     static async fetchQuotaCached(accessToken: string, projectId: string | null = null) {
         const cacheKey = accessToken.substring(0, 32);
         const cached = this._quotaCache.get(cacheKey);
@@ -456,10 +423,8 @@ export class AccountManager {
             return cached.data;
         }
 
-        // Check backoff state: skip if we're in a cooldown period after failures
         const backoff = this._backoffState.get(cacheKey);
         if (backoff && Date.now() < backoff.nextRetryAt) {
-            // Still in backoff, return stale cache if available, else return error
             if (cached) {
                 return cached.data;
             }
@@ -470,13 +435,11 @@ export class AccountManager {
             const data = await this.fetchQuota(accessToken, projectId);
             if (!data.is_error) {
                 this._quotaCache.set(cacheKey, { data, timestamp: Date.now() });
-                // Reset backoff on success
                 this._backoffState.delete(cacheKey);
             } else {
-                // Increment backoff on error
                 const currentFailures = (backoff?.failures || 0) + 1;
-                const baseDelay = Math.min(60000 * Math.pow(2, currentFailures - 1), 480000); // max 8 min
-                const jitter = baseDelay * (0.85 + Math.random() * 0.3); // ±15% jitter
+                const baseDelay = Math.min(60000 * Math.pow(2, currentFailures - 1), 480000);
+                const jitter = baseDelay * (0.85 + Math.random() * 0.3);
                 this._backoffState.set(cacheKey, {
                     failures: currentFailures,
                     nextRetryAt: Date.now() + jitter
@@ -485,7 +448,6 @@ export class AccountManager {
             }
             return data;
         } catch (e) {
-            // Network/auth failure: apply backoff
             const currentFailures = (backoff?.failures || 0) + 1;
             const baseDelay = Math.min(60000 * Math.pow(2, currentFailures - 1), 480000);
             const jitter = baseDelay * (0.85 + Math.random() * 0.3);
@@ -497,18 +459,12 @@ export class AccountManager {
         }
     }
 
-    /**
-     * 仅从缓存中读取配额数据（不发起网络请求）。
-     * 用于 Dashboard 首次打开时快速渲染已有数据，无论是否过期。
-     * 返回 null 表示缓存中没有该 token 的数据。
-     */
     static getQuotaFromCache(accessToken: string): any | null {
         const cacheKey = accessToken.substring(0, 32);
         const cached = this._quotaCache.get(cacheKey);
         return cached ? cached.data : null;
     }
 
-    /** 清除配额缓存。传入 accessToken 时仅清除该账号的缓存，不传则清除全部 */
     static clearQuotaCache(accessToken?: string): void {
         if (accessToken) {
             const cacheKey = accessToken.substring(0, 32);
@@ -518,15 +474,12 @@ export class AccountManager {
         }
     }
 
-    /** 清除退避状态。用于手动 "Refresh All" 时绕过指数退避冷却 */
     static clearBackoffState(): void {
         this._backoffState.clear();
     }
 
     static deleteAccount(accountId: string) {
         const index = this.loadIndex();
-
-        // Remove from index
         const originalLength = index.accounts.length;
         index.accounts = index.accounts.filter(acc => acc.id !== accountId);
 
@@ -534,14 +487,12 @@ export class AccountManager {
             console.warn(`Account ${accountId} not found in index.`);
         }
 
-        // Handle current account deletion
         if (index.current_account_id === accountId) {
             index.current_account_id = index.accounts.length > 0 ? index.accounts[0].id : null;
         }
 
         this.saveIndex(index);
 
-        // Delete file
         const file = path.join(ACCOUNTS_DIR, `${accountId}.json`);
         if (fs.existsSync(file)) {
             try {
