@@ -2,6 +2,18 @@
 
 Release notes and development milestones.
 
+## [v1.2.0] - 2026-10-29
+### Major Features & Improvements
+- **Antigravity IDE 2.6.0 Multi-DB Synchronization**: Seamlessly searches, syncs, and injects state into both `Antigravity IDE` and `Antigravity` profile SQLite databases (`state.vscdb`).
+- **Dual-Sentinel OAuth Token Injection**: Injects both `authStateWithContextSentinelKey` and `oauthTokenInfoSentinelKey` to guarantee uninterrupted account recognition across newer IDE releases.
+- **Unrestricted Model Display**: Removed all restrictive model filtering. Accounts now display all available Google Cloud Code Assist models including Claude 3.5/3.7/Opus 5.5, Gemini 3.1 Pro/Flash, and custom enterprise endpoints according to their actual subscription tier.
+- **Process Lock Elimination (`language_server.exe`)**: Terminating language server processes prior to proxy switching eliminates database locks on Windows and POSIX systems.
+- **Model Grouping Architecture**: Introduced `modelGroupManager.ts` to manage custom model groupings, status bar representations, and custom threshold alerting.
+- **Safe Clean Utility**: Added command and dashboard action to purge corrupt agent trajectory directories (`.antigravity/`, `.jetski/`), remove stale session keys, and repair git worktree config locks.
+- **Auto-Rotation Quota Safeguard**: Suggests automated switching to healthy alternate accounts when active model quota falls below 10%.
+- **StatusGator Live Telemetry**: Polling Google Antigravity service status directly from StatusGator with real-time indicators in the dashboard.
+- **Extracted Dashboard Scripting**: Modularized webview frontend scripts into `dashboardWebviewScript.ts` for clean separation of concerns and CSP compliance.
+
 - [2026-01-01 09:23] feat(core): initialize Mission Control agent dashboard with real-time state telemetry
 - [2026-01-01 11:14] feat(graph): render multi-agent execution DAG with interactive node inspection
 - [2026-01-01 13:05] feat(logs): implement streaming log viewer with regex filtering and level syntax highlighting
