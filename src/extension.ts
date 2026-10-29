@@ -18,6 +18,7 @@ import {
     TOKEN_URL,
     USERINFO_URL,
     getVSCDBPath,
+    getAllVSCDBPaths,
     migrateDataDir,
 } from './constants';
 
@@ -27,18 +28,13 @@ import { SwitcherProxy } from './switcherProxy';
 import { t } from './i18n';
 import { getModelDisplayName, cleanRefreshToken } from './utils';
 
-/**
- * 计算字符串在等宽字体下的视觉宽度
- * CJK字符和 Emoji 计为 2 个单位，其余 ASCII 字符计为 1 个单位
- */
 function getVisualWidth(str: string): number {
     let width = 0;
     for (const char of str) {
         const code = char.charCodeAt(0);
-        // CJK 字符范围: 0x4E00 - 0x9FFF, 全角字符: 0xFF00 - 0xFFEF
         if ((code >= 0x4E00 && code <= 0x9FFF) || (code >= 0xFF00 && code <= 0xFFEF)) {
             width += 2;
-        } else if (char.length > 1) { // 处理 surrogate pairs (如 Emoji)
+        } else if (char.length > 1) {
             width += 2;
         } else {
             width += 1;
@@ -48,7 +44,6 @@ function getVisualWidth(str: string): number {
 }
 
 export function activate(context: vscode.ExtensionContext) {
-    // 🔄 配置目录迁移：从旧路径 ~/.antigravity_tools 复制到 ~/.antigravity_cockpit
     migrateDataDir();
 
     const getConfiguredDbPath = () => {
@@ -57,9 +52,7 @@ export function activate(context: vscode.ExtensionContext) {
     };
 
     const accountTreeProvider = new AccountTreeProvider();
-    // vscode.window.registerTreeDataProvider('antigravityAccounts', accountTreeProvider);
 
-    // --- Welcome Message for First Install ---
     if (!context.globalState.get('hasShownWelcome')) {
         vscode.window.showInformationMessage(
             t('welcomeMessage'),
@@ -72,7 +65,6 @@ export function activate(context: vscode.ExtensionContext) {
         context.globalState.update('hasShownWelcome', true);
     }
 
-    // 5. Automated Quota Optimization: Immunize from Phantom Token Drain
     const workspaceFolders = vscode.workspace.workspaceFolders;
     if (workspaceFolders && workspaceFolders.length > 0) {
         const rootPath = workspaceFolders[0].uri.fsPath;
@@ -87,34 +79,23 @@ export function activate(context: vscode.ExtensionContext) {
                     const template = `# Antigravity Ignore File
 # Prevents phantom token drain during background indexing
 
-# Dependencies
 node_modules/
 bower_components/
 vendor/
-
-# Build outputs
 dist/
 build/
 out/
 .next/
 .nuxt/
-
-# Version control
 .git/
 .svn/
 .hg/
-
-# IDE / Editor
 .idea/
 .vscode/
 .vs/
-
-# Testing & Coverage
 coverage/
 __snapshots__/
 .nyc_output/
-
-# Minified / Binary assets
 *.min.js
 *.min.css
 *.map
@@ -132,8 +113,6 @@ __snapshots__/
 *.gif
 *.mp4
 *.webm
-
-# Logs & temp
 *.log
 tmp/
 temp/
@@ -147,44 +126,22 @@ temp/
         }
     }
 
-    // --- Status Bar Section ---
     const statusBarItem = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Right, 10000);
     statusBarItem.command = 'antigravity-mission-hub.openDashboard';
     context.subscriptions.push(statusBarItem);
 
-    // 立即显示状态栏（初始状态）
     statusBarItem.text = `$(sync~spin) ${t('loading')}`;
     statusBarItem.tooltip = t('loadingTooltip');
     statusBarItem.show();
 
-    // --- Configuration Change Listener ---
-    // --- Configuration Change Listener ---
-    // (Removed AI mode and autoRotate listeners per user request)
-
-
-
-
-    /**
-     * 🔄 IDE 账号同步检测
-     * 每次定时刷新时调用，检测 Antigravity IDE 中当前登录的账号
-     * 是否与插件的 current_account_id 一致。
-     * 
-     * - 如果一致 → 无需操作
-     * - 如果不一致且该 email 已在插件中 → 切换 current_account_id + 更新 Token
-     * - 如果不一致且该 email 不在插件中 → 自动创建新账号并设为当前账号
-     * 
-     * @returns true 如果发生了账号切换/导入（调用方可据此刷新 UI）
-     */
     async function syncWithIdeAccount(): Promise<boolean> {
         try {
             const dbPath = getConfiguredDbPath();
 
-            // 1. 先读取运行中实时变更的 auth status，用于热切换已存在账号
             const authStatus = await DBManager.readAuthStatus(dbPath);
             const index = AccountManager.loadIndex();
 
             if (authStatus.state === 'logged_out') {
-                console.log('[Cockpit] antigravityAuthStatus 显示 IDE 已注销，停止热同步，等待下一次稳定登录状态。');
                 return false;
             }
 
@@ -197,18 +154,13 @@ temp/
                         const liveUserInfo = await getUserInfo(authStatus.apiKey);
                         if (liveUserInfo && liveUserInfo.email === liveIdeEmail) {
                             verifiedLiveEmail = liveIdeEmail;
-                        } else {
-                            console.warn(`[Cockpit] antigravityAuthStatus 邮箱校验不一致，忽略热切换: status=${liveIdeEmail}, api=${liveUserInfo?.email || 'unknown'}`);
                         }
                     } catch (e) {
-                        console.warn(`[Cockpit] antigravityAuthStatus apiKey 校验失败，忽略热切换: ${liveIdeEmail}`);
+                        console.warn(`[Cockpit] antigravityAuthStatus apiKey 校验失败: ${liveIdeEmail}`);
                     }
                 }
 
-                if (!verifiedLiveEmail) {
-                    // 运行中的 auth status 在登出/过渡态下可能残留旧账号，此时不做热切换
-                    // 交给下方的完整 token 同步或下次稳定状态再处理
-                } else {
+                if (verifiedLiveEmail) {
                     if (index.current_account_id) {
                         try {
                             const currentAccount = AccountManager.loadAccount(index.current_account_id);
@@ -226,9 +178,7 @@ temp/
                                 AccountManager.saveAccount(currentAccount);
                                 return false;
                             }
-                        } catch (e) {
-                            // 当前账号损坏时继续尝试按 email 对账
-                        }
+                        } catch (e) {}
                     }
 
                     const liveExisting = index.accounts.find(a => a.email === verifiedLiveEmail);
@@ -245,7 +195,6 @@ temp/
                         freshIndex.current_account_id = liveExisting.id;
                         AccountManager.saveIndex(freshIndex);
 
-                        console.log(`[Cockpit] 已根据 antigravityAuthStatus 切换到已有账号: ${verifiedLiveEmail}`);
                         vscode.window.showInformationMessage(t('ideSyncSwitched', verifiedLiveEmail));
                         accountTreeProvider.refresh();
                         DashboardProvider.refresh();
@@ -254,14 +203,11 @@ temp/
                 }
             }
 
-            // 2. 再读取完整 Token，用于重启后完整同步、刷新 Token、自动导入新账号
             const tokenInfo = await DBManager.readFullTokenInfo(dbPath);
             if (!tokenInfo) {
-                // IDE 中无登录信息（可能 IDE 未启动或已登出），不做任何操作
                 return false;
             }
 
-            // 3. 确保 Token 可用（如果在 5 分钟内过期，则提前刷新）
             let accessToken = tokenInfo.access_token;
             let refreshToken = tokenInfo.refresh_token;
             let expiry = tokenInfo.expiry;
@@ -272,33 +218,25 @@ temp/
                     accessToken = refreshed.accessToken;
                     expiry = Math.floor(Date.now() / 1000) + refreshed.expiresIn;
                 } catch (refreshErr) {
-                    console.warn('[Cockpit] IDE Token 刷新失败，跳过同步检测。');
                     return false;
                 }
             }
 
-            // 4. 快速路径：先用 access_token 比对当前账号，避免不必要的 API 请求
             if (index.current_account_id) {
                 try {
                     const currentAccount = AccountManager.loadAccount(index.current_account_id);
                     if (currentAccount.token && currentAccount.token.refresh_token === refreshToken) {
-                        // refresh_token 相同 → 同一个账号，确认为活跃状态
                         currentAccount.last_used = Date.now();
                         AccountManager.saveAccount(currentAccount);
-                        // 账号并未真正变更，静默处理，返回 false 防止全局触发了无意义的渲染重绘
                         return false;
                     }
-                } catch (e) {
-                    // 当前账号加载失败，继续进行完整检测
-                }
+                } catch (e) {}
             }
 
-            // 5. refresh_token 不同 → 需要获取 email 进行精确匹配
             let userInfo: any;
             try {
                 userInfo = await getUserInfo(accessToken);
             } catch (infoErr) {
-                console.warn('[Cockpit] 同步检测：获取用户信息失败，跳过。');
                 return false;
             }
 
@@ -308,12 +246,10 @@ temp/
 
             const ideEmail = userInfo.email;
 
-            // 6. 检查当前账号是否已经是这个 email
             if (index.current_account_id) {
                 try {
                     const currentAccount = AccountManager.loadAccount(index.current_account_id);
                     if (currentAccount.email === ideEmail) {
-                        // email 一致，只需更新 Token（IDE 可能刷新了 Token）
                         currentAccount.token = {
                             access_token: accessToken,
                             refresh_token: refreshToken,
@@ -324,20 +260,13 @@ temp/
                         AccountManager.saveAccount(currentAccount);
                         return true;
                     }
-                } catch (e) {
-                    // 继续
-                }
+                } catch (e) {}
             }
-
-            // 7. IDE 的 email 与插件当前账号不同 → 需要切换
-            console.log(`[Cockpit] 检测到 IDE 账号变更: IDE=${ideEmail}`);
 
             const existing = index.accounts.find(a => a.email === ideEmail);
 
             if (existing) {
-                // 7a. 该 email 在插件中已有记录 → 切换到该账号并更新 Token
                 const account = AccountManager.loadAccount(existing.id);
-                // 清除该账号旧 Token 的缓存（Token 即将被更新）
                 if (account.token) {
                     AccountManager.clearQuotaCache(account.token.access_token);
                 }
@@ -349,21 +278,16 @@ temp/
                 };
                 AccountManager.saveAccount(account);
 
-                // 更新当前选中账号（须重拉最新索引防覆盖）
                 const freshIndex = AccountManager.loadIndex();
                 freshIndex.current_account_id = existing.id;
                 AccountManager.saveIndex(freshIndex);
 
-                console.log(`[Cockpit] 已同步切换到已有账号: ${ideEmail}`);
                 vscode.window.showInformationMessage(t('ideSyncSwitched', ideEmail));
-
-                // 刷新 UI
                 accountTreeProvider.refresh();
                 DashboardProvider.refresh();
                 return true;
 
             } else {
-                // 7b. 全新账号 → 自动导入并设为当前
                 const accountId = (crypto as any).randomUUID
                     ? (crypto as any).randomUUID()
                     : Math.random().toString(36).substring(2) + Date.now().toString(36);
@@ -385,16 +309,10 @@ temp/
 
                 AccountManager.saveAccount(newAccount);
 
-                // saveAccount 内部的 updateIndexSummary 已将新账号加入索引，
-                // 这里重新加载最新索引，仅设置 current_account_id，
-                // 避免用旧快照 saveIndex 覆盖导致索引丢失。
                 const freshIndex = AccountManager.loadIndex();
                 freshIndex.current_account_id = accountId;
                 AccountManager.saveIndex(freshIndex);
 
-                // 新账号无缓存，无需清除
-
-                console.log(`[Cockpit] 已自动导入并切换到新账号: ${ideEmail}`);
                 vscode.window.showInformationMessage(
                     t('ideSyncImported', ideEmail),
                     t('openPanel')
@@ -404,7 +322,6 @@ temp/
                     }
                 });
 
-                // 刷新 UI
                 accountTreeProvider.refresh();
                 DashboardProvider.refresh();
                 return true;
@@ -417,7 +334,6 @@ temp/
     }
 
     async function updateStatusBar() {
-        // Network Forensic: If TLS is blocked by VPN, short-circuit to prevent retry storm
         if (tlsBlocked) {
             statusBarItem.text = `$(shield) Network Blocked`;
             statusBarItem.tooltip = '⚠️ VPN/Proxy is blocking AI connections. Use "Refresh All" to retry after disabling SSL-Inspection.';
@@ -446,39 +362,28 @@ temp/
 
             let quota;
             try {
-                // 尝试获取配额（使用缓存版本，避免与 Dashboard 重复请求）
                 quota = await AccountManager.fetchQuotaCached(account.token.access_token);
             } catch (err: any) {
-                // 如果是 401 (Unauthorized)，尝试刷新 Token
                 if (err.response && err.response.status === 401) {
                     try {
-                        console.log('Token expired (401), attempting to refresh...');
                         const oldAccessToken = account.token.access_token;
                         const refreshed = await AccountManager.refreshToken(account.token.refresh_token);
 
-                        // 更新内存和文件中的 Token
                         account.token.access_token = refreshed.accessToken;
                         account.token.expiry_timestamp = Math.floor(Date.now() / 1000) + refreshed.expiresIn;
                         AccountManager.saveAccount(account);
 
-                        // 使用新 Token 重试获取配额
                         AccountManager.clearQuotaCache(oldAccessToken);
                         quota = await AccountManager.fetchQuotaCached(refreshed.accessToken);
-                        console.log('Token refreshed and quota fetched successfully.');
-                        DashboardProvider.refresh(); // 通知面板刷新以显示新数据
+                        DashboardProvider.refresh();
                     } catch (refreshErr) {
-                        // 刷新失败，抛出原始错误或刷新错误
-                        console.error('Failed to refresh token:', refreshErr);
-                        throw err; // 抛出原始 401 错误，让外层 catch 处理
+                        throw err;
                     }
                 } else {
-                    // 非 401 错误，直接抛出
                     throw err;
                 }
             }
 
-            // 首次安装时初始化默认分组（如果分组为空）
-            // 将 quota.models 转换为 ModelInfo[] 格式
             const modelsForInit = (quota.models || []).map((m: any) => ({
                 name: m.name,
                 resetTime: m.reset_time || '',
@@ -486,16 +391,12 @@ temp/
             }));
             ModelGroupManager.initDefaultGroupIfNeeded(modelsForInit);
 
-            // Load group configuration
             const groupsConfig = ModelGroupManager.loadGroups();
 
-            // --- Auto-Rotate Check ---
-            // When autoRotate is enabled and any model drops below 10%, suggest switching
             const autoRotateEnabled = vscode.workspace.getConfiguration('antigravity-mission-hub').get<boolean>('autoRotate', true);
             if (autoRotateEnabled && !quota.is_error && !quota.is_forbidden && quota.models) {
                 const lowModels = quota.models.filter((m: any) => m.percentage < 10);
                 if (lowModels.length > 0) {
-                    // Find healthiest alternative account
                     let bestAlt: any = null;
                     let bestAltScore = -1;
                     for (const otherAcc of index.accounts) {
@@ -505,7 +406,6 @@ temp/
                             if (!fullAcc.token) continue;
                             const cached = AccountManager.getQuotaFromCache(fullAcc.token.access_token);
                             if (cached && cached.models && cached.models.length > 0) {
-                                // Check the quota of the specific models that are currently low
                                 const targetModels = cached.models.filter((m: any) => lowModels.some((lm: any) => lm.name === m.name));
                                 if (targetModels.length > 0) {
                                     const avgPct = targetModels.reduce((s: number, m: any) => s + (m.percentage || 0), 0) / targetModels.length;
@@ -519,8 +419,7 @@ temp/
                     }
 
                     if (bestAlt && bestAltScore > 20) {
-                        // Only suggest once per low-quota detection (use a cooldown flag)
-                        const cooldownKey = `autoRotate_${account.id}_${Date.now() - (Date.now() % 300000)}`; // 5-min window
+                        const cooldownKey = `autoRotate_${account.id}_${Date.now() - (Date.now() % 300000)}`;
                         if (!context.globalState.get(cooldownKey)) {
                             context.globalState.update(cooldownKey, true);
                             const lowestModel = lowModels.reduce((min: any, m: any) => m.percentage < min.percentage ? m : min, lowModels[0]);
@@ -541,16 +440,15 @@ temp/
             }
 
             if (quota.is_error) {
-                // 配额 API 返回了具体错误（如 429），显示错误状态但不影响面板功能
                 const errText = quota.error_message || 'Error';
                 statusBarItem.text = `$(warning) ${account.email.split('@')[0]} ⚠`;
                 
                 const errorTooltip = new vscode.MarkdownString();
                 errorTooltip.isTrusted = true;
                 errorTooltip.supportHtml = true;
-                errorTooltip.appendMarkdown(`🛡️ **Antigravity Mission Hub**\n\n`);
-                errorTooltip.appendMarkdown(`⚠️ ${t('quotaFetchError')}: ${errText}\n\n`);
-                errorTooltip.appendMarkdown(`*${t('quotaRetryHint')}*\n`);
+                errorTooltip.appendMarkdown(`🛡️ **Antigravity Mission Hub**\\n\\n`);
+                errorTooltip.appendMarkdown(`⚠️ ${t('quotaFetchError')}: ${errText}\\n\\n`);
+                errorTooltip.appendMarkdown(`*${t('quotaRetryHint')}*\\n`);
                 statusBarItem.tooltip = errorTooltip;
                 statusBarItem.command = 'antigravity-mission-hub.openDashboard';
                 statusBarItem.show();
@@ -558,27 +456,21 @@ temp/
             }
 
             if (groupsConfig.groups.length === 0 || quota.is_forbidden) {
-                // 无分组或无权限，显示简单状态
                 statusBarItem.text = `$(pulse) ${account.email.split('@')[0]}`;
             } else {
-                // 按分组显示每个分组中剩余额度最低的模型
                 const groupTexts: string[] = [];
 
                 for (const group of groupsConfig.groups) {
-                    // 找出该分组中的模型 (group.models 是模型名称字符串数组)
                     const groupModels = quota.models.filter((m: any) =>
                         group.models.includes(m.name)
                     );
 
                     if (groupModels.length > 0) {
-                        // 找出剩余额度最低的模型
                         const lowestModel = groupModels.reduce((min: any, m: any) =>
                             m.percentage < min.percentage ? m : min
                             , groupModels[0]);
 
-                        // 根据额度选择颜色图标
                         const icon = lowestModel.percentage > 50 ? "🟢" : (lowestModel.percentage > 20 ? "🟡" : "🔴");
-                        // Formatting as professional Cyber-Industrial text
                         groupTexts.push(`${icon} ${group.name.toUpperCase()} [${lowestModel.percentage}%]`);
                     }
                 }
@@ -590,29 +482,21 @@ temp/
                 }
             }
 
-            // Generate detailed tooltip for hover
             let tooltip = new vscode.MarkdownString();
             tooltip.isTrusted = true;
             tooltip.supportHtml = true;
 
-            tooltip.appendMarkdown(`🛡️ **Antigravity Mission Hub**\n\n`);
-
+            tooltip.appendMarkdown(`🛡️ **Antigravity Mission Hub**\\n\\n`);
 
             if (!quota.is_forbidden) {
-                // 极致精确的视觉宽度计算
                 const getLen = (s: string) => {
                     let len = 0;
                     for (const char of s) {
                         const code = char.charCodeAt(0);
-                        // 1. Emoji 图标 (surrogate pairs) -> 2位
                         if (char.length > 1) { len += 2; }
-                        // 2. 中文字符、全角符号 -> 2位
-                        else if (code >= 0x4E00 && code <= 0x9FFF || code >= 0xFF00 && code <= 0xFFEF) {
+                        else if ((code >= 0x4E00 && code <= 0x9FFF) || (code >= 0xFF00 && code <= 0xFFEF)) {
                             len += 2;
-                        }
-                        // 3. 进度条块、箭头、ASCII、普通符号 -> 1位
-                        // (注意：█ \u2588, ░ \u2591, → \u2192 在等宽字体下都是1位)
-                        else { len += 1; }
+                        } else { len += 1; }
                     }
                     return len;
                 };
@@ -620,7 +504,7 @@ temp/
                 const itemsToRender: { isGroup?: boolean, name?: string, model?: any }[] = [];
 
                 if (groupsConfig && groupsConfig.groups && groupsConfig.groups.length > 0) {
-                    groupsConfig.groups.forEach((group: any, index: number) => {
+                    groupsConfig.groups.forEach((group: any) => {
                         const groupModels = quota.models.filter((m: any) => group.models.includes(m.name));
                         if (groupModels.length > 0) {
                             groupModels.forEach((m: any) => itemsToRender.push({ model: m }));
@@ -669,36 +553,31 @@ temp/
                     }
                 });
 
-                // 用固定公式计算总行宽：icon(2) + 模型名(N) + 进度条(10) + 百分比(4) + 箭头(1) + 时间(13) + 空格(5) = N + 35
                 const currentAccountLabel = account.name || account.email;
                 const totalLineWidth = maxNameWidth + 35;
                 const leftText = t('openSettingsPanel');
                 const rightText = t('currentAccount', currentAccountLabel);
 
-                // 剩余空格 = 总行宽 - 左侧格数 - 右侧格数
                 const spaces = Math.max(1, totalLineWidth - getLen(leftText) - getLen(rightText));
                 lines.push(leftText + ' '.repeat(spaces) + rightText);
 
-                tooltip.appendMarkdown('```\n' + lines.join('\n') + '\n```\n');
+                tooltip.appendMarkdown('```\\n' + lines.join('\\n') + '\\n```\\n');
             } else {
-                // 无权限时简单展示当前账号
                 const currentAccountLabel = account.name || account.email;
-                tooltip.appendMarkdown('```\n');
-                tooltip.appendMarkdown(`${t('quotaNoPermission')}    ${t('currentAccount', currentAccountLabel)}\n`);
-                tooltip.appendMarkdown('```\n');
+                tooltip.appendMarkdown('```\\n');
+                tooltip.appendMarkdown(`${t('quotaNoPermission')}    ${t('currentAccount', currentAccountLabel)}\\n`);
+                tooltip.appendMarkdown('```\\n');
             }
 
             statusBarItem.tooltip = tooltip;
             statusBarItem.command = 'antigravity-mission-hub.openDashboard';
             statusBarItem.show();
 
-            // 连接成功，重置错误状态
             lastConnectionError = false;
             connectionErrorCount = 0;
         } catch (e: any) {
             connectionErrorCount++;
 
-            // Network Forensic: Detect TLS errors during regular polling too
             const errMsg = e.message || e.toString() || '';
             if (errMsg.includes('UNABLE_TO_VERIFY_LEAF_SIGNATURE') || errMsg.includes('CERT_HAS_EXPIRED') || errMsg.includes('SELF_SIGNED_CERT_IN_CHAIN')) {
                 tlsBlocked = true;
@@ -710,26 +589,23 @@ temp/
                 return;
             }
 
-            // 更新状态栏显示错误状态，点击时打开管理面板（而非仅重连）
             statusBarItem.text = `$(error) ${t('reconnect')}`;
-            // 详细错误信息放在 tooltip 中，方便排查
             const errorTooltip = new vscode.MarkdownString();
-            errorTooltip.appendMarkdown(`**Antigravity Copilot**\n\n`);
-            errorTooltip.appendMarkdown(`❌ *连接失败*\n\n`);
-            errorTooltip.appendMarkdown(`错误信息: ${e.message || 'Unknown error'}\n\n`);
+            errorTooltip.appendMarkdown(`**Antigravity Copilot**\\n\\n`);
+            errorTooltip.appendMarkdown(`❌ *连接失败*\\n\\n`);
+            errorTooltip.appendMarkdown(`错误信息: ${e.message || 'Unknown error'}\\n\\n`);
             if (e.response && e.response.status) {
                 errorTooltip.appendMarkdown(` (Status: ${e.response.status})`);
             }
-            errorTooltip.appendMarkdown(`\n\n*点击打开管理面板，可切换账号或重试*`);
+            errorTooltip.appendMarkdown(`\\n\\n*点击打开管理面板，可切换账号或重试*`);
             statusBarItem.tooltip = errorTooltip;
 
-            // 关键修复：错误状态下点击打开面板，而非僵死在 reconnect
             statusBarItem.command = 'antigravity-mission-hub.openDashboard';
             statusBarItem.show();
 
-            // 避免频繁通知：使用配置的刷新间隔作为通知间隔
             const now = Date.now();
-            const notifyConfig = vscode.workspace.getConfiguration('antigravity-mission-hub'); const notifyIntervalMs = (notifyConfig.get<number>('autoRefreshInterval', 5)) * 60 * 1000;
+            const notifyConfig = vscode.workspace.getConfiguration('antigravity-mission-hub'); 
+            const notifyIntervalMs = (notifyConfig.get<number>('autoRefreshInterval', 5)) * 60 * 1000;
             const shouldNotify = !lastConnectionError || (now - lastNotificationTime > notifyIntervalMs);
 
             if (shouldNotify) {
@@ -753,19 +629,13 @@ temp/
         }
     }
 
-    // 连接状态跟踪
     let lastConnectionError = false;
     let lastNotificationTime = 0;
     let connectionErrorCount = 0;
-
-    // Network Forensic: TLS block flag to suppress retry storms under VPN
     let tlsBlocked = false;
-
-    // Cross-Model Switch Safety: 60-second cooldown to prevent dual-injector race conditions
     let lastSwitchTimestamp = 0;
     const SWITCH_COOLDOWN_MS = 60000;
 
-    // Initial update: 先进行静默对账修剪微小误差，再检测 IDE 当前账号情况并刷新状态栏
     try {
         AccountManager.reconcileIndexAtStartup();
         syncWithIdeAccount().catch(e => {
@@ -778,20 +648,18 @@ temp/
     } catch (e) {
         console.error('[Cockpit] Failed to run startup operations:', e);
     }
-    // Refresh status bar when list is refreshed
+
     const originalRefresh = accountTreeProvider.refresh.bind(accountTreeProvider);
     accountTreeProvider.refresh = () => {
         originalRefresh();
         updateStatusBar();
     };
 
-    // 注册刷新状态栏命令 (供分组管理等功能调用)
     let refreshStatusBarCommand = vscode.commands.registerCommand('antigravity-mission-hub.refreshStatusBar', () => {
         updateStatusBar();
     });
     context.subscriptions.push(refreshStatusBarCommand);
 
-    // 注册重新连接命令
     let reconnectCommand = vscode.commands.registerCommand('antigravity-mission-hub.reconnect', async () => {
         vscode.window.showInformationMessage(t('reconnecting'));
         try {
@@ -799,17 +667,13 @@ temp/
             if (!lastConnectionError) {
                 vscode.window.showInformationMessage(t('reconnectSuccess'));
             }
-        } catch (e) {
-            // 错误已在 updateStatusBar 中处理
-        }
+        } catch (e) {}
     });
     context.subscriptions.push(reconnectCommand);
 
-    // --- 定时自动刷新功能 ---
     let autoRefreshTimer: NodeJS.Timeout | undefined;
     let statusGatorTimer: NodeJS.Timeout | undefined;
 
-    // --- StatusGator: Real-time Google Antigravity outage monitor ---
     interface ServiceStatusCache {
         status: 'UP' | 'POSSIBLE_OUTAGE' | 'LIKELY_OUTAGE' | 'MAINTENANCE' | 'UNKNOWN';
         label: string;
@@ -841,13 +705,11 @@ temp/
             let label = 'Status Unknown';
             let reports = '';
 
-            // Extract user report count
             const reportMatch = html.match(/(\d+)\s+outage reports in the last 24 hours/i);
             if (reportMatch) {
                 reports = `${reportMatch[1]} reports / 24h`;
             }
 
-            // Parse the primary status headline
             if (/Likely\s+Google\s+Antigravity\s+outage/i.test(html) || /Likely outage/i.test(html.substring(0, 5000))) {
                 status = 'LIKELY_OUTAGE';
                 label = 'Likely Outage';
@@ -861,15 +723,11 @@ temp/
                 status = 'UP';
                 label = 'Service Up';
             } else if (html.length > 1000) {
-                // Page loaded but no clear status keyword - treat as UP
                 status = 'UP';
                 label = 'Service Operational';
             }
 
             cachedServiceStatus = { status, label, reports, fetchedAt: Date.now() };
-            console.log(`[StatusGator] Fetched: ${label} | ${reports}`);
-
-            // Push the new status to the dashboard if it's open (and persist it for next open)
             DashboardProvider.setAndPostServiceStatus(cachedServiceStatus);
 
         } catch (err: any) {
@@ -889,30 +747,24 @@ temp/
             clearInterval(statusGatorTimer);
             statusGatorTimer = undefined;
         }
-        // Fetch immediately on startup, then every 5 minutes
         fetchStatusGator();
         statusGatorTimer = setInterval(fetchStatusGator, 5 * 60 * 1000);
     }
 
     function setupAutoRefresh() {
-        // 清除现有定时器
         if (autoRefreshTimer) {
             clearInterval(autoRefreshTimer);
             autoRefreshTimer = undefined;
         }
 
-        // 读取配置
         const config = vscode.workspace.getConfiguration('antigravity-mission-hub');
         const intervalMinutes = config.get<number>('autoRefreshInterval', 5);
 
         if (intervalMinutes > 0) {
             const intervalMs = intervalMinutes * 60 * 1000;
             autoRefreshTimer = setInterval(async () => {
-                // Reset blocked flag so auto-refresh can retry
                 tlsBlocked = false;
-                // 先检测 IDE 账号是否变更，再刷新状态栏
                 await syncWithIdeAccount();
-                // Execute a silent refresh of all accounts
                 await vscode.commands.executeCommand('antigravity-mission-hub.refreshAllAccounts', true);
             }, intervalMs);
             console.log(`Antigravity Mission Hub: 自动刷新已启用，间隔 ${intervalMinutes} 分钟`);
@@ -921,12 +773,9 @@ temp/
         }
     }
 
-    // 初始化定时刷新
     setupAutoRefresh();
-    // 初始化 StatusGator 轮询
     setupStatusGatorPoller();
 
-    // --- DB 文件实时监听 (实时感知 IDE 登录) ---
     let dbWatchTimeout: NodeJS.Timeout | undefined;
     let dbWatchRetryTimeout: NodeJS.Timeout | undefined;
     let dbWatcher: fs.FSWatcher | undefined;
@@ -936,7 +785,6 @@ temp/
             clearTimeout(dbWatchTimeout);
         }
         dbWatchTimeout = setTimeout(async () => {
-            console.log(`[Cockpit] IDE 数据库发生变动(${reason})，开始同步检测...`);
             const changed = await syncWithIdeAccount();
             if (changed) {
                 DashboardProvider.refresh();
@@ -959,7 +807,6 @@ temp/
         }
 
         if (!fs.existsSync(dbPath)) {
-            console.warn(`[Cockpit] IDE 数据库不存在，稍后重试监听: ${dbPath}`);
             dbWatchRetryTimeout = setTimeout(startDbWatcher, 5000);
             return;
         }
@@ -967,7 +814,6 @@ temp/
         try {
             dbWatcher = fs.watch(dbPath, (eventType) => {
                 if (eventType === 'rename') {
-                    console.log('[Cockpit] IDE 数据库监听收到 rename 事件，准备重挂 watcher...');
                     scheduleIdeAccountSync('rename');
                     dbWatchRetryTimeout = setTimeout(startDbWatcher, 1000);
                     return;
@@ -977,20 +823,15 @@ temp/
                     scheduleIdeAccountSync('change');
                 }
             });
-            console.log(`[Cockpit] 已开启全局数据库监听: ${dbPath}`);
         } catch (err) {
-            console.warn('[Cockpit] 数据库监听启动失败, 退化为轮询模式:', err);
             dbWatchRetryTimeout = setTimeout(startDbWatcher, 5000);
         }
     };
 
     try {
         startDbWatcher();
-    } catch (err) {
-        console.warn('[Cockpit] 数据库监听启动失败, 退化为轮询模式:', err);
-    }
+    } catch (err) {}
 
-    // 监听配置变化
     context.subscriptions.push(
         vscode.workspace.onDidChangeConfiguration(e => {
             if (e.affectsConfiguration('antigravity-mission-hub.autoRefreshInterval')) {
@@ -1000,7 +841,6 @@ temp/
         })
     );
 
-    // 确保插件停用时清除定时器
     context.subscriptions.push({
         dispose: () => {
             if (autoRefreshTimer) {
@@ -1021,8 +861,6 @@ temp/
     let refreshCommand = vscode.commands.registerCommand('antigravity-mission-hub.refreshAccounts', () => {
         accountTreeProvider.refresh();
     });
-
-
 
     let addAccountCommand = vscode.commands.registerCommand('antigravity-mission-hub.addAccount', async () => {
         try {
@@ -1073,7 +911,7 @@ temp/
 
                 AccountManager.saveAccount(account);
                 accountTreeProvider.refresh();
-                DashboardProvider.refresh(); // 新增：刷新面板
+                DashboardProvider.refresh();
                 vscode.window.showInformationMessage(t('refreshSuccess', userInfo.email));
             }
         } catch (e) {
@@ -1102,12 +940,10 @@ temp/
         if (confirm !== t('confirm')) { return; }
 
         if (switchMode === 'safe') {
-            // 安全模式：只更新当前账号索引与 UI，不做 Kill/注入/自动重启
             const index = AccountManager.loadIndex();
             index.current_account_id = accountId;
             AccountManager.saveIndex(index);
 
-            // 更新最后活跃时间
             try {
                 const account = AccountManager.loadAccount(accountId);
                 account.last_used = Date.now();
@@ -1118,12 +954,11 @@ temp/
             DashboardProvider.refresh();
 
             vscode.window.showInformationMessage(
-                t('switchConfirmSafe', item.email).split('\n\n')[0] + ' (Safe Mode)'
+                t('switchConfirmSafe', item.email).split('\\n\\n')[0] + ' (Safe Mode)'
             );
             return;
         }
 
-        // Cross-Model Switch Safety: 60-second cooldown guard
         const now = Date.now();
         if (now - lastSwitchTimestamp < SWITCH_COOLDOWN_MS) {
             const remaining = Math.ceil((SWITCH_COOLDOWN_MS - (now - lastSwitchTimestamp)) / 1000);
@@ -1134,7 +969,6 @@ temp/
         }
         lastSwitchTimestamp = now;
 
-        // 高级模式下，先进行环境预检查
         const dbPathOverride = config.get<string>('databasePathOverride', '');
         const exePathConfig = config.get<{ win32?: string; darwin?: string; linux?: string }>('antigravityExecutablePath', {});
 
@@ -1144,8 +978,7 @@ temp/
         );
 
         if (!envCheck.success) {
-            // 有致命问题，显示详细信息
-            const detailMessage = envCheck.suggestions.join('\n');
+            const detailMessage = envCheck.suggestions.join('\\n');
             const options: string[] = [t('tryAnyway')];
             if (!envCheck.nodeJs.ok) {
                 options.push('Install Node.js');
@@ -1165,8 +998,7 @@ temp/
                 return;
             }
         } else if (envCheck.suggestions.length > 0) {
-            // 有警告信息，但不是致命问题
-            const warnMessage = envCheck.suggestions.join('\n');
+            const warnMessage = envCheck.suggestions.join('\\n');
             const action = await vscode.window.showWarningMessage(
                 t('envCheckWarning', warnMessage),
                 { modal: true },
@@ -1188,7 +1020,6 @@ temp/
                 const account = AccountManager.loadAccount(accountId);
                 if (!account.token) { throw new Error(vscode.env.language.startsWith('zh') ? "该账号暂无 Token" : "The account has no Token"); }
 
-                // Check/Refresh token
                 let token = account.token;
                 if (Date.now() / 1000 > token.expiry_timestamp - 300) {
                     progress.report({ message: t('refreshingToken') });
@@ -1201,22 +1032,18 @@ temp/
 
                 progress.report({ message: "准备外部代理切换流程..." });
 
-                // 更新最后活跃时间
                 account.last_used = Date.now();
                 AccountManager.saveAccount(account);
 
-                // 更新当前账号索引
                 const index = AccountManager.loadIndex();
                 index.current_account_id = accountId;
                 AccountManager.saveIndex(index);
 
-                // 读取配置中的等待时间
                 const processWaitSeconds = config.get<number>('processWaitSeconds', 10);
 
-                // 启动外部代理接管后续的 Kill -> Inject -> Restart
                 await SwitcherProxy.executeExternalSwitch(
                     token.access_token,
-                    token.refresh_token,
+                    cleanRefreshToken(token.refresh_token),
                     token.expiry_timestamp,
                     account.email,
                     dbPathOverride || undefined,
@@ -1225,11 +1052,8 @@ temp/
                 );
 
                 progress.report({ message: t('requestingRestart') });
-
-                // 等待一小会儿确保代理脚本已启动
                 await new Promise(resolve => setTimeout(resolve, 800));
 
-                // 主动命令 IDE 退出 (双重保险)
                 try {
                     await vscode.commands.executeCommand('workbench.action.quit');
                 } catch (e) {
@@ -1245,27 +1069,20 @@ temp/
     });
 
     let openDashboardCommand = vscode.commands.registerCommand('antigravity-mission-hub.openDashboard', async () => {
-        // Phase 0: 立即打开面板（使用本地缓存数据渲染，0 延迟）
         DashboardProvider.createOrShow(context.extensionUri);
-
-        // Phase 1: 后台检测 IDE 账号一致性（不阻塞面板显示）
         const accountChanged = await syncWithIdeAccount();
-
-        // Phase 2: 如果账号发生变更，刷新面板内容
         if (accountChanged) {
             DashboardProvider.refresh();
         }
-        // 无论是否变更，都刷新状态栏（可能有新的配额数据）
         updateStatusBar();
     });
 
     let refreshAccountCommand = vscode.commands.registerCommand('antigravity-mission-hub.refreshAccount', async (accountId: string, silent: boolean = false) => {
         try {
-            await syncWithIdeAccount(); // 刷新前先主动侦测一次账号表更
+            await syncWithIdeAccount();
             const account = AccountManager.loadAccount(accountId);
             if (account.token) {
                 const oldAccessToken = account.token.access_token;
-                // Only refresh token if expired or about to expire
                 if (!account.token.expiry_timestamp || Date.now() / 1000 > account.token.expiry_timestamp - 300) {
                     const refreshed = await AccountManager.refreshToken(account.token.refresh_token);
                     account.token.access_token = refreshed.accessToken;
@@ -1273,13 +1090,11 @@ temp/
                     account.last_used = Date.now();
                     AccountManager.saveAccount(account);
                 }
-                // 仅清除该账号旧 Token 的缓存，不影响其他账号
                 AccountManager.clearQuotaCache(oldAccessToken);
-                // 立即用新 Token 获取最新配额（写入缓存），供 Dashboard 直接读取
                 await AccountManager.fetchQuotaCached(account.token.access_token);
                 accountTreeProvider.refresh();
-                DashboardProvider.refresh(); // 刷新设置面板
-                updateStatusBar(); // 同步刷新状态栏限额数据
+                DashboardProvider.refresh();
+                updateStatusBar();
                 
                 if (!silent) {
                     vscode.window.showInformationMessage(t('refreshSuccess', account.email));
@@ -1306,10 +1121,7 @@ temp/
 
         try {
             AccountManager.deleteAccount(accountId);
-
-            // 如果删除了当前账号，更新状态栏
             updateStatusBar();
-
             accountTreeProvider.refresh();
             DashboardProvider.refresh();
             vscode.window.showInformationMessage(t('accountDeleted', email));
@@ -1376,10 +1188,8 @@ temp/
         }
     });
 
-    // --- Token 登录命令 ---
     let loginWithTokenCommand = vscode.commands.registerCommand('antigravity-mission-hub.loginWithToken', async (refreshTokenArg?: string) => {
         try {
-            // 支持从 Dashboard 传入 token，或弹出输入框让用户手动输入
             let refreshTokenInput = refreshTokenArg;
             if (!refreshTokenInput) {
                 refreshTokenInput = await vscode.window.showInputBox({
@@ -1401,18 +1211,15 @@ temp/
                 title: t('tokenLoginValidating'),
                 cancellable: false
             }, async () => {
-                // 1. 用 refresh_token 获取 access_token
                 const refreshed = await AccountManager.refreshToken(refreshTokenValue);
                 const accessToken = refreshed.accessToken;
                 const expiresIn = refreshed.expiresIn;
 
-                // 2. 获取用户信息
                 const userInfo = await getUserInfo(accessToken);
                 if (!userInfo || !userInfo.email) {
                     throw new Error('Failed to retrieve user info from token');
                 }
 
-                // 3. 查重 → 创建或更新账号
                 const index = AccountManager.loadIndex();
                 const existing = index.accounts.find(a => a.email === userInfo.email);
 
@@ -1467,10 +1274,8 @@ temp/
     });
     context.subscriptions.push(loginWithTokenCommand);
 
-    // --- 导出 Token 命令 ---
     let exportTokenCommand = vscode.commands.registerCommand('antigravity-mission-hub.exportToken', async (accountId?: string) => {
         try {
-            // 如果未传入 accountId，使用当前活跃账号
             if (!accountId) {
                 const index = AccountManager.loadIndex();
                 accountId = index.current_account_id || undefined;
@@ -1487,7 +1292,6 @@ temp/
                 return;
             }
 
-            // 先弹出安全警告确认
             const confirm = await vscode.window.showWarningMessage(
                 t('exportTokenWarning'),
                 { modal: true },
@@ -1504,20 +1308,19 @@ temp/
     });
     context.subscriptions.push(exportTokenCommand);
 
-    // --- Install Node.js 命令 (Cross-Platform) ---
     let installNodeCommand = vscode.commands.registerCommand('antigravity-mission-hub.installNode', async () => {
         const platform = process.platform;
         let instructions: string;
         let downloadUrl: string;
 
         if (platform === 'darwin') {
-            instructions = 'macOS detected. You can install Node.js via:\n\n1. Homebrew: brew install node\n2. Official installer: https://nodejs.org\n3. nvm: curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.40.1/install.sh | bash && nvm install --lts';
+            instructions = 'macOS detected. You can install Node.js via:\\n\\n1. Homebrew: brew install node\\n2. Official installer: https://nodejs.org\\n3. nvm: curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.40.1/install.sh | bash && nvm install --lts';
             downloadUrl = 'https://nodejs.org/en/download/';
         } else if (platform === 'win32') {
-            instructions = 'Windows detected. You can install Node.js via:\n\n1. Official installer: https://nodejs.org\n2. winget: winget install OpenJS.NodeJS.LTS\n3. Chocolatey: choco install nodejs-lts\n4. Scoop: scoop install nodejs-lts';
+            instructions = 'Windows detected. You can install Node.js via:\\n\\n1. Official installer: https://nodejs.org\\n2. winget: winget install OpenJS.NodeJS.LTS\\n3. Chocolatey: choco install nodejs-lts\\n4. Scoop: scoop install nodejs-lts';
             downloadUrl = 'https://nodejs.org/en/download/';
         } else {
-            instructions = 'Linux detected. You can install Node.js via:\n\n1. Package manager: apt install nodejs / dnf install nodejs\n2. nvm: curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.40.1/install.sh | bash && nvm install --lts\n3. Official: https://nodejs.org';
+            instructions = 'Linux detected. You can install Node.js via:\\n\\n1. Package manager: apt install nodejs / dnf install nodejs\\n2. nvm: curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.40.1/install.sh | bash && nvm install --lts\\n3. Official: https://nodejs.org';
             downloadUrl = 'https://nodejs.org/en/download/';
         }
 
@@ -1545,7 +1348,6 @@ temp/
     });
     context.subscriptions.push(installNodeCommand);
 
-    // --- 批量导出 Token 命令 ---
     let batchExportCommand = vscode.commands.registerCommand('antigravity-mission-hub.batchExportTokens', async () => {
         try {
             const index = AccountManager.loadIndex();
@@ -1560,7 +1362,7 @@ temp/
                     if (account.token && account.token.refresh_token) {
                         exportData.accounts.push({
                             email: account.email,
-                            refresh_token: account.token.refresh_token
+                            refresh_token: cleanRefreshToken(account.token.refresh_token)
                         });
                     }
                 } catch (e) {
@@ -1573,7 +1375,6 @@ temp/
                 return;
             }
 
-            // 安全警告确认
             const confirm = await vscode.window.showWarningMessage(
                 t('exportTokenWarning'),
                 { modal: true },
@@ -1590,10 +1391,8 @@ temp/
     });
     context.subscriptions.push(batchExportCommand);
 
-    // --- 批量导入 Token 命令 ---
     let batchImportCommand = vscode.commands.registerCommand('antigravity-mission-hub.batchImportTokens', async (jsonText?: string) => {
         try {
-            // 支持从 Dashboard 传入 JSON，或弹出输入框
             let input = jsonText;
             if (!input) {
                 input = await vscode.window.showInputBox({
@@ -1615,7 +1414,17 @@ temp/
                 return;
             }
 
-            if (!parsed.version || !Array.isArray(parsed.accounts) || parsed.accounts.length === 0) {
+            let accountsToImport: any[] = [];
+            if (Array.isArray(parsed)) {
+                accountsToImport = parsed;
+            } else if (parsed && Array.isArray(parsed.accounts)) {
+                accountsToImport = parsed.accounts;
+            } else {
+                vscode.window.showErrorMessage(t('batchImportInvalidFormat'));
+                return;
+            }
+
+            if (accountsToImport.length === 0) {
                 vscode.window.showErrorMessage(t('batchImportInvalidFormat'));
                 return;
             }
@@ -1628,11 +1437,12 @@ temp/
                 let newCount = 0;
                 let updatedCount = 0;
                 let failedCount = 0;
-                const total = parsed.accounts.length;
+                const total = accountsToImport.length;
 
                 for (let i = 0; i < total; i++) {
-                    const item = parsed.accounts[i];
-                    if (!item.refresh_token) {
+                    const item = accountsToImport[i];
+                    const tokenVal = cleanRefreshToken(item.refresh_token || '');
+                    if (!tokenVal) {
                         failedCount++;
                         continue;
                     }
@@ -1640,19 +1450,16 @@ temp/
                     progress.report({ message: t('batchImportProgress', i + 1, total) });
 
                     try {
-                        // 1. 用 refresh_token 获取 access_token
-                        const refreshed = await AccountManager.refreshToken(item.refresh_token);
+                        const refreshed = await AccountManager.refreshToken(tokenVal);
                         const accessToken = refreshed.accessToken;
                         const expiresIn = refreshed.expiresIn;
 
-                        // 2. 获取用户信息
                         const userInfo = await getUserInfo(accessToken);
                         if (!userInfo || !userInfo.email) {
                             failedCount++;
                             continue;
                         }
 
-                        // 3. 查重 → 创建或更新
                         const index = AccountManager.loadIndex();
                         const existing = index.accounts.find(a => a.email === userInfo.email);
 
@@ -1691,7 +1498,7 @@ temp/
 
                         account.token = {
                             access_token: accessToken,
-                            refresh_token: item.refresh_token,
+                            refresh_token: tokenVal,
                             expiry_timestamp: Math.floor(Date.now() / 1000) + expiresIn,
                             email: userInfo.email
                         };
@@ -1715,7 +1522,6 @@ temp/
     });
     context.subscriptions.push(batchImportCommand);
 
-    // 打开外部切换代理日志目录（ag_switch_*.log 所在的临时目录）
     let openSwitchLogsCommand = vscode.commands.registerCommand('antigravity-mission-hub.openSwitchLogs', async () => {
         const tempDir = os.tmpdir();
         const uri = vscode.Uri.file(tempDir);
@@ -1723,7 +1529,6 @@ temp/
         vscode.window.showInformationMessage(t('openLogsTip'));
     });
 
-    // 环境自检命令
     let diagnoseEnvironmentCommand = vscode.commands.registerCommand('antigravity-mission-hub.diagnoseEnvironment', async () => {
         const { execSync } = require('child_process');
         const fs = require('fs');
@@ -1734,7 +1539,6 @@ temp/
         const results: string[] = [];
         results.push(t('envDiagnoseTitle'));
 
-        // 1. Node.js 检测
         results.push(t('nodeSection'));
         let nodePath = '';
         let nodeStatus = t('statusNotFound');
@@ -1742,14 +1546,12 @@ temp/
             if (platform === 'win32') {
                 try {
                     const result = execSync('where node', { encoding: 'utf-8', windowsHide: true });
-                    const lines = result.trim().split('\n');
+                    const lines = result.trim().split('\\n');
                     if (lines.length > 0 && fs.existsSync(lines[0].trim())) {
                         nodePath = lines[0].trim();
                         nodeStatus = t('statusFound');
                     }
-                } catch (e) {
-                    // 忽略
-                }
+                } catch (e) {}
             } else {
                 nodePath = execSync('which node', { encoding: 'utf-8' }).trim();
                 if (nodePath && fs.existsSync(nodePath)) {
@@ -1765,7 +1567,6 @@ temp/
         }
         results.push('');
 
-        // 2. 数据库路径检测
         results.push(t('dbSection'));
         const { getVSCDBPath } = require('./constants');
         const dbPathOverride = config.get<string>('databasePathOverride', '');
@@ -1778,7 +1579,6 @@ temp/
         }
         results.push('');
 
-        // 3. Antigravity 可执行文件检测
         results.push(t('exeSection'));
         const exePathConfig = config.get<{ win32?: string; darwin?: string; linux?: string }>('antigravityExecutablePath', {});
         let exePath = '';
@@ -1787,22 +1587,21 @@ temp/
         if (platform === 'win32') {
             exePath = exePathConfig.win32 && exePathConfig.win32.trim()
                 ? exePathConfig.win32.trim()
-                : path.join(process.env.LOCALAPPDATA || '', 'Programs', 'Antigravity', 'Antigravity.exe');
+                : path.join(process.env.LOCALAPPDATA || '', 'Programs', 'Antigravity IDE', 'Antigravity IDE.exe');
             if (fs.existsSync(exePath)) {
                 exeStatus = t('statusFound');
             }
         } else if (platform === 'darwin') {
             exePath = exePathConfig.darwin && exePathConfig.darwin.trim()
                 ? exePathConfig.darwin.trim()
-                : '/Applications/Antigravity.app';
+                : '/Applications/Antigravity IDE.app';
             if (fs.existsSync(exePath)) {
                 exeStatus = t('statusFound');
             }
         } else {
-            // Linux
             const possiblePaths = exePathConfig.linux && exePathConfig.linux.trim()
                 ? [exePathConfig.linux.trim()]
-                : ['/usr/bin/antigravity', '/opt/antigravity/antigravity', path.join(process.env.HOME || '', '.local/bin/antigravity')];
+                : ['/usr/bin/antigravity-ide', '/opt/antigravity-ide/antigravity-ide', '/usr/bin/antigravity', '/opt/antigravity/antigravity', path.join(process.env.HOME || '', '.local/bin/antigravity-ide')];
             for (const p of possiblePaths) {
                 if (fs.existsSync(p)) {
                     exePath = p;
@@ -1821,13 +1620,11 @@ temp/
         }
         results.push('');
 
-        // 4. 平台信息
         results.push(t('platformSection'));
         results.push(t('osLabelText', platform));
         results.push(t('archLabelText', os.arch()));
         results.push('');
 
-        // 5. 配置信息
         results.push(t('configSection'));
         const switchMode = config.get<string>('switchMode', 'advanced');
         const autoRefreshInterval = config.get<number>('autoRefreshInterval', 5);
@@ -1835,7 +1632,6 @@ temp/
         results.push(t('refreshIntervalLabelText', autoRefreshInterval));
         results.push('');
 
-        // 6. 插件数据目录检测
         results.push('## 📂 Plugin Data Directory');
         const { DATA_DIR, ACCOUNTS_DIR, ACCOUNTS_INDEX_FILE } = require('./constants');
         results.push(`- DATA_DIR: ${DATA_DIR}`);
@@ -1853,7 +1649,6 @@ temp/
         }
         results.push('');
 
-        // 7. IDE 数据库 Key 检测（诊断关键）
         results.push('## 🔑 IDE Database Keys');
         try {
             if (dbExists) {
@@ -1875,16 +1670,11 @@ temp/
                     if (keys.length > 0) {
                         results.push(`Found ${keys.length} relevant keys:`);
                         keys.forEach(k => results.push(`  - ${k}`));
-                    } else {
-                        results.push('⚠️ No relevant keys found in IDE database');
-                        results.push('  (This may indicate the IDE has not been logged in yet, or the DB schema has changed)');
                     }
 
-                    // 尝试读取 Auth Status
                     const authStatus = await DBManager.readAuthStatus(actualDbPath);
-                    results.push(`\nAuth Status: state=${authStatus.state}, email=${authStatus.email || '(none)'}`);
+                    results.push(`\\nAuth Status: state=${authStatus.state}, email=${authStatus.email || '(none)'}`);
 
-                    // 尝试读取 Full Token
                     const tokenInfo = await DBManager.readFullTokenInfo(actualDbPath);
                     results.push(`Token Info: ${tokenInfo ? '✅ Found (access_token: ' + tokenInfo.access_token.substring(0, 10) + '...)' : '❌ Not Found'}`);
                 } finally {
@@ -1899,15 +1689,13 @@ temp/
         }
         results.push('');
 
-        // 显示结果
-        const report = results.join('\n');
+        const report = results.join('\\n');
         const doc = await vscode.workspace.openTextDocument({
             content: report,
             language: 'markdown'
         });
         await vscode.window.showTextDocument(doc);
 
-        // 提供复制按钮
         const action = await vscode.window.showInformationMessage(
             t('envReportGenerated'),
             t('copyReport')
@@ -1918,7 +1706,6 @@ temp/
         }
     });
 
-    // --- Quick Switch to Healthiest Account (Ctrl+Shift+A) ---
     let quickSwitchCommand = vscode.commands.registerCommand('antigravity-mission-hub.quickSwitch', async () => {
         try {
             const index = AccountManager.loadIndex();
@@ -1927,15 +1714,13 @@ temp/
                 return;
             }
 
-            // Find the healthiest non-current account
             let bestAccount: any = null;
             let bestScore = -1;
 
             for (const acc of index.accounts) {
                 if (acc.id === index.current_account_id) continue;
 
-                // Calculate health score from cached quota
-                let score = 50; // Default mid-score
+                let score = 50;
                 try {
                     const fullAcc = AccountManager.loadAccount(acc.id);
                     if (!fullAcc.token) continue;
@@ -1973,8 +1758,6 @@ temp/
         }
     });
 
-    // --- Set AI Working Mode Removed ---
-
     context.subscriptions.push(
         refreshCommand,
         addAccountCommand,
@@ -1988,7 +1771,6 @@ temp/
         quickSwitchCommand
     );
 
-    // 3. Terminal Stream Integrity Check
     let checkTerminalHealthCommand = vscode.commands.registerCommand('antigravity-mission-hub.checkTerminalHealth', () => {
         let issuesFound = false;
         let checkedFiles: string[] = [];
@@ -2026,7 +1808,7 @@ temp/
                     if (detected.length > 0) {
                         issuesFound = true;
                         vscode.window.showWarningMessage(
-                            `⚠️ Terminal Interference Detected in ${path.basename(profile)}: Found [${detected.join(', ')}]. These tools inject ANSI escape sequences and OSC control codes into the prompt string, which corrupts the JSON-RPC observation stream used by the Antigravity agent. This causes "Agent Terminated" errors. Recommendation: Set a plain prompt for VS Code's integrated terminal using terminal.integrated.profiles or disable these tools when using Antigravity.`
+                            `⚠️ Terminal Interference Detected in ${path.basename(profile)}: Found [${detected.join(', ')}]. These tools inject ANSI escape sequences into the observation stream.`
                         );
                     }
                 } catch (e) {
@@ -2041,16 +1823,87 @@ temp/
     });
     context.subscriptions.push(checkTerminalHealthCommand);
 
-    // --- 启动时自动同步 IDE 真实登录状态 (with Handshake Guard) ---
+    let safeCleanCommand = vscode.commands.registerCommand('antigravity-mission-hub.safeClean', async () => {
+        const confirmClean = await vscode.window.showInformationMessage(
+            'Safe Clean: This will reset corrupted agent sessions, purge IDE session cache, and remove temporary agent trajectory folders (.antigravity/, .jetski/). Your code files will NOT be affected.',
+            'Clean Now',
+            'Cancel'
+        );
+
+        if (confirmClean !== 'Clean Now') { return; }
+
+        let purgedKeys = 0;
+        try {
+            purgedKeys = await DBManager.purgeStaleSessionKeys();
+        } catch (dbErr) {
+            console.error('[Safe Clean] DB purge failed:', dbErr);
+        }
+
+        AccountManager.clearQuotaCache();
+        AccountManager.clearBackoffState();
+
+        const workspaceFolders = vscode.workspace.workspaceFolders;
+        let cleanedCount = 0;
+        let gitFixed = false;
+
+        if (workspaceFolders && workspaceFolders.length > 0) {
+            for (const folder of workspaceFolders) {
+                const rootPath = folder.uri.fsPath;
+                const cleanTargets = ['.antigravity', '.jetski'];
+
+                for (const dir of cleanTargets) {
+                    const fullPath = path.join(rootPath, dir);
+                    if (fs.existsSync(fullPath)) {
+                        try {
+                            fs.rmSync(fullPath, { recursive: true, force: true });
+                            cleanedCount++;
+                        } catch (cleanErr: any) {
+                            console.error(`[Safe Clean] Failed to remove ${fullPath}:`, cleanErr);
+                        }
+                    }
+                }
+
+                try {
+                    const gitConfigPath = path.join(rootPath, '.git', 'config');
+                    if (fs.existsSync(gitConfigPath)) {
+                        let configContent = fs.readFileSync(gitConfigPath, 'utf8');
+                        let needsSave = false;
+
+                        if (configContent.includes('worktreeConfig = true')) {
+                            configContent = configContent.replace(/\s*worktreeConfig\s*=\s*true/gi, '');
+                            needsSave = true;
+                        }
+
+                        if (configContent.match(/repositoryformatversion\s*=\s*[1-9]\d*/i)) {
+                            configContent = configContent.replace(/(repositoryformatversion\s*=\s*)[1-9]\d*/gi, '$10');
+                            needsSave = true;
+                        }
+
+                        if (needsSave) {
+                            fs.writeFileSync(gitConfigPath, configContent, 'utf8');
+                            gitFixed = true;
+                        }
+                    }
+                } catch (gitErr) {}
+            }
+        }
+
+        DashboardProvider.refresh();
+        updateStatusBar();
+
+        let msg = `✅ Safe Clean Completed! Purged ${purgedKeys} IDE session cache keys, removed ${cleanedCount} temporary trajectory folders.`;
+        if (gitFixed) {
+            msg += ' Fixed Git worktree configuration.';
+        }
+        vscode.window.showInformationMessage(msg);
+    });
+    context.subscriptions.push(safeCleanCommand);
+
     setTimeout(async () => {
         try {
-            console.log('正在检查 IDE 数据库中的真实登录状态...');
-
-            // Show INITIALIZING state during handshake guard
             statusBarItem.text = `$(sync~spin) Initializing...`;
             statusBarItem.tooltip = 'Verifying account handshake with backend...';
 
-            // 启动阶段优先等待 antigravityAuthStatus 稳定，避免误信滞后的 oauthToken
             const dbPath = getConfiguredDbPath();
             let startupSynced = false;
 
@@ -2058,24 +1911,17 @@ temp/
                 try {
                     const authStatus = await DBManager.readAuthStatus(dbPath);
                     if (authStatus.state === 'authenticated' && authStatus.email) {
-                        console.log(`启动同步检测到稳定登录态: ${authStatus.email}`);
                         const changed = await syncWithIdeAccount();
                         if (changed) {
                             updateStatusBar();
                         }
 
-                        // 2. Launch Environment Validation (Windows)
                         if (process.platform === 'win32' && !process.env.HOME) {
                             statusBarItem.backgroundColor = new vscode.ThemeColor('statusBarItem.errorBackground');
                             statusBarItem.text = `$(warning) Terminal Blindness Risk`;
                             statusBarItem.tooltip = `⚠️ Terminal Blindness Risk: IDE launched via shortcut. Restart via Mission Hub to enable Browser Subagent.`;
-                            vscode.window.showWarningMessage("⚠️ Terminal Blindness Risk: IDE launched via shortcut. Restart via Mission Hub to enable Browser Subagent.");
                         }
 
-                        // === HANDSHAKE GUARD ===
-                        // Verify backend tier handshake (loadCodeAssist HTTP 200)
-                        // This prevents eager prompts from triggering 429 "Resource Exhausted"
-                        // before the backend has identified the user's paid tier.
                         try {
                             const index = AccountManager.loadIndex();
                             if (index.current_account_id) {
@@ -2083,25 +1929,18 @@ temp/
                                 if (currentAccount.token) {
                                     statusBarItem.text = `$(shield) Handshake Guard...`;
                                     statusBarItem.tooltip = 'Verifying quota tier with Google Cloud backend...';
-                                    // OS-Level Edge Case: Add startup jitter before handshake
                                     await new Promise(r => setTimeout(r, 300 + Math.random() * 400));
-
-                                    // Perform the actual loadCodeAssist handshake
                                     const quotaResult = await AccountManager.fetchQuotaCached(currentAccount.token.access_token);
-                                    
                                     if (quotaResult && !quotaResult.is_error) {
                                         console.log(`[Handshake Guard] ✅ Backend tier verified: ${quotaResult.tier || 'STANDARD'}`);
-                                    } else {
-                                        console.warn(`[Handshake Guard] ⚠️ Backend returned error, agent prompts may trigger 429.`);
                                     }
                                 }
                             }
                         } catch (guardErr: any) {
                             console.warn('[Handshake Guard] Failed to verify backend tier:', guardErr);
-                            // 1. Network Forensic Guard
                             const errStr = guardErr.toString();
                             if (errStr.includes('UNABLE_TO_VERIFY_LEAF_SIGNATURE') || errStr.includes('CERT_HAS_EXPIRED') || errStr.includes('SELF_SIGNED_CERT_IN_CHAIN')) {
-                                tlsBlocked = true; // Suppress background polling retry storm
+                                tlsBlocked = true;
                                 vscode.window.showErrorMessage("⚠️ Network Block Detected: Your VPN/Proxy is blocking the AI Handshake. Please disable SSL-Inspection or set 'http.proxyStrictSSL' to false. Use 'Refresh All' to retry.");
                             }
                         }
@@ -2109,34 +1948,20 @@ temp/
                         startupSynced = true;
                         break;
                     }
-
-                    if (authStatus.state === 'logged_out') {
-                        console.log('启动同步检测到 IDE 仍处于注销/过渡态，等待下一次重试...');
-                    } else {
-                        console.log('启动同步尚未读到稳定的登录态，继续等待...');
-                    }
-                } catch (readErr) {
-                    console.warn(`第 ${i + 1} 次读取 IDE 登录态失败:`, readErr);
-                }
+                } catch (readErr) {}
 
                 if (i < 9) {
                     await new Promise(r => setTimeout(r, 4000));
                 }
             }
 
-            if (!startupSynced) {
-                console.log('启动同步未发现稳定登录态，跳过本轮自动同步。');
-            }
-
-            // Final: update status bar to Ready state
             updateStatusBar();
         } catch (e) {
             console.error('自动同步状态失败:', e);
-            updateStatusBar(); // Ensure status bar isn't stuck on "Initializing"
+            updateStatusBar();
         }
-    }, 8000); // 延迟 8 秒执行，等待 IDE 完全初始化
+    }, 8000);
 
-    // Memory Leak & Zombie Prevention: Register cleanup for all active background loops
     context.subscriptions.push({
         dispose: () => {
             if (autoRefreshTimer) {
@@ -2170,14 +1995,11 @@ async function performOAuth(): Promise<any> {
             const pathname = parsedUrl.pathname;
             const queryObject = parsedUrl.query;
 
-            // 忽略图标请求
             if (pathname === '/favicon.ico') {
                 res.writeHead(404);
-                res.end();
-                return;
             }
+            return;
 
-            // 只处理授权回调路径
             if (pathname === '/oauth-callback') {
                 if (queryObject.code) {
                     res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
@@ -2206,7 +2028,6 @@ async function performOAuth(): Promise<any> {
             }
         });
 
-        // 处理 HTTP 服务器绑定失败（如端口被占用、防火墙阻止等）
         server.on('error', (err: Error) => {
             console.error('[Cockpit] OAuth HTTP server error:', err);
             reject(new Error(`OAuth server failed to start: ${err.message}`));
@@ -2239,7 +2060,6 @@ async function performOAuth(): Promise<any> {
             } else if (result === t('oauthOpenBrowser')) {
                 vscode.env.openExternal(vscode.Uri.parse(authUrl));
             } else {
-                // 用户取消，关闭服务器
                 server.close();
                 reject(new Error(t('oauthUserCancelled')));
                 return;
@@ -2263,4 +2083,3 @@ async function getUserInfo(accessToken: string): Promise<any> {
 }
 
 export function deactivate() { }
-
