@@ -38,18 +38,19 @@ jobs:
           OVSX_PAT: ${{ secrets.OVSX_PAT }}
           OPENVSX_TOKEN: ${{ secrets.OPENVSX_TOKEN }}
         run: |
-          echo "### Open VSX Publish Output" >> $GITHUB_STEP_SUMMARY
           PAT_TOKEN="${OPEN_VSX_TOKEN:-${OVSX_PAT:-$OPENVSX_TOKEN}}"
+          echo "PAT_TOKEN length: ${#PAT_TOKEN}" > ovsx.log
           if [ -n "$PAT_TOKEN" ]; then
-            echo "Publishing to Open VSX with Personal Access Token..."
-            npx ovsx publish *.vsix --pat "$PAT_TOKEN" --skip-duplicate 2>&1 | tee -a $GITHUB_STEP_SUMMARY || {
-              echo "PAT publish failed. Retrying with Trusted Publishing..." | tee -a $GITHUB_STEP_SUMMARY
-              npx ovsx publish *.vsix --trusted-publishing 2>&1 | tee -a $GITHUB_STEP_SUMMARY || true
+            echo "Publishing to Open VSX with Personal Access Token..." >> ovsx.log
+            npx ovsx publish *.vsix --pat "$PAT_TOKEN" >> ovsx.log 2>&1 || {
+              echo "PAT publish failed. Retrying with Trusted Publishing..." >> ovsx.log
+              npx ovsx publish *.vsix --trusted-publishing >> ovsx.log 2>&1 || true
             }
           else
-            echo "No PAT token found. Publishing to Open VSX via Trusted Publishing (OIDC)..."
-            npx ovsx publish *.vsix --trusted-publishing 2>&1 | tee -a $GITHUB_STEP_SUMMARY || true
+            echo "No PAT token found. Publishing to Open VSX via Trusted Publishing (OIDC)..." >> ovsx.log
+            npx ovsx publish *.vsix --trusted-publishing >> ovsx.log 2>&1 || true
           fi
+          cat ovsx.log
 
       # Publish to VS Code Marketplace (official) - only if VSCE_PAT is set
       - name: Publish to VS Code Marketplace
@@ -70,8 +71,8 @@ jobs:
         with:
           tag_name: v1.2.3
           name: "Release v1.2.3: Production Auto-Restart & Live Account Keyring Synchronization"
+          body_path: ovsx.log
           files: "*.vsix"
-          generate_release_notes: true
           overwrite_files: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
