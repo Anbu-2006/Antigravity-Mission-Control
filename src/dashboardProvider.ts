@@ -1,6 +1,7 @@
 import * as vscode from 'vscode';
 import { AccountManager, Account } from './accountManager';
 import { DBManager } from './dbManager';
+import { KeyringManager } from './keyringManager';
 import { ModelGroupManager, ModelGroup, ModelGroupsConfig, ModelInfo } from './modelGroupManager';
 import { t, getTranslations } from './i18n';
 import { getDashboardJsTemplate } from './dashboardWebviewScript';
@@ -88,7 +89,11 @@ export class DashboardProvider {
                 try {
                     switch (message.command) {
                         case 'switch':
-                            await vscode.commands.executeCommand('antigravity-mission-hub.switchAccount', { accountId: message.accountId, email: message.email });
+                            await vscode.commands.executeCommand('antigravity-mission-hub.switchAccount', {
+                                accountId: message.accountId,
+                                email: message.email,
+                                target: message.target || 'ide'
+                            });
                             this._update();
                             return;
                         case 'refresh':
@@ -389,6 +394,8 @@ export class DashboardProvider {
     private async _update() {
         const index = AccountManager.loadIndex();
         const groupsConfig = ModelGroupManager.loadGroups();
+        const cliEmail = KeyringManager.getCurrentCliEmail();
+        const ideEmail = index.current_account_id ? (AccountManager.loadAccount(index.current_account_id)?.email || null) : null;
 
         const accountsDataPhase1 = index.accounts.map(acc => {
             const fullAcc = AccountManager.loadAccount(acc.id);
@@ -396,23 +403,28 @@ export class DashboardProvider {
             if (fullAcc.token) {
                 quota = AccountManager.getQuotaFromCache(fullAcc.token.access_token);
             }
+            const isIdeCurrent = acc.id === index.current_account_id;
+            const isCliCurrent = !!((cliEmail && fullAcc.email && cliEmail.toLowerCase() === fullAcc.email.toLowerCase()) || (acc.id === index.current_cli_account_id));
             return {
                 ...fullAcc,
                 quota,
-                isCurrent: acc.id === index.current_account_id
+                isCurrent: isIdeCurrent,
+                isIdeCurrent,
+                isCliCurrent
             };
         });
 
-        this._panel.webview.html = this._getHtmlForWebview(accountsDataPhase1, groupsConfig, index.ui_state || {});
+        this._panel.webview.html = this._getHtmlForWebview(accountsDataPhase1, groupsConfig, index.ui_state || {}, ideEmail, cliEmail);
 
         const currentAccMissing = accountsDataPhase1.find(acc => acc.isCurrent && acc.token && !acc.quota);
         if (currentAccMissing) {
             const accountsDataPhase2 = await Promise.all(index.accounts.map(async acc => {
                 const fullAcc = AccountManager.loadAccount(acc.id);
-                const isCurrent = acc.id === index.current_account_id;
+                const isIdeCurrent = acc.id === index.current_account_id;
+                const isCliCurrent = !!((cliEmail && fullAcc.email && cliEmail.toLowerCase() === fullAcc.email.toLowerCase()) || (acc.id === index.current_cli_account_id));
                 let quota = null;
                 if (fullAcc.token) {
-                    if (isCurrent) {
+                    if (isIdeCurrent) {
                         try {
                             quota = await AccountManager.fetchQuotaCached(fullAcc.token.access_token);
                         } catch (e: any) {
@@ -427,39 +439,51 @@ export class DashboardProvider {
                 return {
                     ...fullAcc,
                     quota,
-                    isCurrent
+                    isCurrent: isIdeCurrent,
+                    isIdeCurrent,
+                    isCliCurrent
                 };
             }));
 
             this._panel.webview.postMessage({
                 command: 'updateAccounts',
-                accounts: accountsDataPhase2
+                accounts: accountsDataPhase2,
+                ideEmail,
+                cliEmail
             });
         }
     }
 
     private _postState() {
         const index = AccountManager.loadIndex();
+        const cliEmail = KeyringManager.getCurrentCliEmail();
+        const ideEmail = index.current_account_id ? (AccountManager.loadAccount(index.current_account_id)?.email || null) : null;
         const accountsData = index.accounts.map(acc => {
             const fullAcc = AccountManager.loadAccount(acc.id);
             let quota = null;
             if (fullAcc.token) {
                 quota = AccountManager.getQuotaFromCache(fullAcc.token.access_token);
             }
+            const isIdeCurrent = acc.id === index.current_account_id;
+            const isCliCurrent = !!((cliEmail && fullAcc.email && cliEmail.toLowerCase() === fullAcc.email.toLowerCase()) || (acc.id === index.current_cli_account_id));
             return {
                 ...fullAcc,
                 quota,
-                isCurrent: acc.id === index.current_account_id
+                isCurrent: isIdeCurrent,
+                isIdeCurrent,
+                isCliCurrent
             };
         });
 
         this._panel.webview.postMessage({
             command: 'updateAccounts',
-            accounts: accountsData
+            accounts: accountsData,
+            ideEmail,
+            cliEmail
         });
     }
 
-    private _getHtmlForWebview(accountsData: any[], groupsConfig: any, uiState: any = {}) {
+    private _getHtmlForWebview(accountsData: any[], groupsConfig: any, uiState: any = {}, ideEmail: string | null = null, cliEmail: string | null = null) {
         const config = vscode.workspace.getConfiguration('antigravity-mission-hub');
         const autoRefreshInterval = config.get<number>('autoRefreshInterval', 5);
         const accountsJson = JSON.stringify(accountsData);
@@ -474,7 +498,9 @@ export class DashboardProvider {
             .replace('ACCOUNTS_PLACEHOLDER', accountsJson)
             .replace('GROUPS_PLACEHOLDER', groupsJson)
             .replace('SERVICE_STATUS_PLACEHOLDER', serviceStatusJson)
-            .replace('INTERVAL_PLACEHOLDER', autoRefreshInterval.toString());
+            .replace('INTERVAL_PLACEHOLDER', autoRefreshInterval.toString())
+            .replace('IDE_EMAIL_PLACEHOLDER', JSON.stringify(ideEmail || ''))
+            .replace('CLI_EMAIL_PLACEHOLDER', JSON.stringify(cliEmail || ''));
 
         return `<!DOCTYPE html>
 <html lang="en">
@@ -557,6 +583,20 @@ body{font-family:'Inter',sans-serif;background:#05070a;color:#cbd5e1;overflow:hi
 .action-btn.ghost:hover { background: rgba(255,255,255,0.1); border-color: #fff; box-shadow: none; }
 .action-btn.danger { border-color: var(--red); color: var(--red); background: rgba(255,42,42,0.1); }
 .action-btn.danger:hover { background: var(--red); color: #000; box-shadow: 0 0 15px rgba(255,42,42,0.4); }
+.action-btn.cyan { border-color: var(--cyan); color: var(--cyan); background: rgba(0,240,255,0.12); }
+.action-btn.cyan:hover { background: var(--cyan); color: #000; box-shadow: 0 0 15px rgba(0,240,255,0.4); }
+.live-indicator.ide-indicator { background: rgba(0,255,102,0.15); border-color: var(--green); color: var(--green); }
+.live-indicator.cli-indicator { background: rgba(0,240,255,0.15); border-color: var(--cyan); color: var(--cyan); animation: pulse-cyan 2s infinite; }
+@keyframes pulse-cyan { 0% { box-shadow: 0 0 0 0 rgba(0,240,255,0.4); } 70% { box-shadow: 0 0 0 6px rgba(0,240,255,0); } 100% { box-shadow: 0 0 0 0 rgba(0,240,255,0); } }
+.env-status-bar { display: flex; align-items: center; gap: 8px; margin-left: 14px; }
+.env-pill { display: flex; align-items: center; gap: 6px; background: rgba(0,0,0,0.5); border: 1px solid rgba(255,255,255,0.08); border-radius: 6px; padding: 4px 8px; font-size: 11px; font-family: monospace; }
+.env-dot { width: 6px; height: 6px; border-radius: 50%; display: inline-block; }
+.env-label { color: var(--text-muted); font-weight: 700; font-size: 10px; }
+.env-val { color: var(--text-main); font-weight: 600; max-width: 140px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 10px; }
+.t-badges-wrap { display: flex; gap: 4px; align-items: center; margin-top: 3px; }
+.t-badge { font-size: 8px; font-family: var(--font-cyber); font-weight: 700; padding: 1px 5px; border-radius: 3px; letter-spacing: 0.5px; }
+.t-badge-ide { background: rgba(0,255,102,0.15); border: 1px solid var(--green); color: var(--green); }
+.t-badge-cli { background: rgba(0,240,255,0.15); border: 1px solid var(--cyan); color: var(--cyan); }
 
 @keyframes pulse { 0% { box-shadow: 0 0 0 0 rgba(0,255,102,0.4); } 70% { box-shadow: 0 0 0 6px rgba(0,255,102,0); } 100% { box-shadow: 0 0 0 0 rgba(0,255,102,0); } }
 
@@ -612,7 +652,21 @@ body{font-family:'Inter',sans-serif;background:#05070a;color:#cbd5e1;overflow:hi
 <body>
 <div class="cockpit">
     <div class="nav">
-        <div class="nav-brand"><div class="logo-shield"></div>ANTIGRAVITY MISSION HUB</div>
+        <div style="display:flex;align-items:center;min-width:0;">
+            <div class="nav-brand"><div class="logo-shield"></div>ANTIGRAVITY MISSION HUB</div>
+            <div class="env-status-bar">
+                <div class="env-pill" title="Current Antigravity IDE Account">
+                    <span class="env-dot" style="background:var(--green);box-shadow:0 0 6px var(--green)"></span>
+                    <span class="env-label">IDE:</span>
+                    <span class="env-val" id="navIdeAccount">Loading...</span>
+                </div>
+                <div class="env-pill" title="Current Antigravity CLI (agy) Account">
+                    <span class="env-dot" style="background:var(--cyan);box-shadow:0 0 6px var(--cyan)"></span>
+                    <span class="env-label">CLI:</span>
+                    <span class="env-val" id="navCliAccount">Loading...</span>
+                </div>
+            </div>
+        </div>
         <div class="nav-actions">
             <button class="nav-btn" onclick="doAdd()"><span class="icon">+</span> Add Account</button>
             <button class="nav-btn" onclick="openTokenModal()"><span class="icon">🔑</span> Token</button>

@@ -1,4 +1,6 @@
 import { execSync } from 'child_process';
+import * as fs from 'fs';
+import * as path from 'path';
 
 export interface AntigravityKeyringPayload {
     token: {
@@ -53,6 +55,7 @@ export class KeyringManager {
 
             const jsonStr = JSON.stringify(payload);
 
+            let success = false;
             if (process.platform === 'win32') {
                 const base64Secret = Buffer.from(jsonStr, 'utf8').toString('base64');
                 const psScript = `
@@ -99,25 +102,77 @@ public class CredMgr {
                 `;
                 const encoded = Buffer.from(psScript, 'utf16le').toString('base64');
                 execSync(`powershell -NoProfile -NonInteractive -EncodedCommand ${encoded}`, { stdio: 'ignore' });
-                return true;
+                success = true;
             } else if (process.platform === 'darwin') {
                 const escaped = jsonStr.replace(/'/g, "'\\''");
                 execSync(`security add-generic-password -s "${this.SERVICE}" -a "${this.USER}" -w '${escaped}' -U`, { stdio: 'ignore' });
-                return true;
+                success = true;
             } else {
                 try {
                     const escaped = jsonStr.replace(/'/g, "'\\''");
                     execSync(`printf '%s' '${escaped}' | secret-tool store --label="${this.SERVICE}" service "${this.SERVICE}" username "${this.USER}"`, { stdio: 'ignore' });
-                    return true;
+                    success = true;
                 } catch (e) {
                     console.warn('[KeyringManager] Linux secret-tool unavailable');
-                    return false;
+                    success = false;
                 }
             }
+
+            // 同步 ~/.gemini/google_accounts.json 以确保 CLI 工具 (agy) 识别活动账号
+            try {
+                const home = process.env.USERPROFILE || process.env.HOME || '';
+                if (home) {
+                    const gAccPath = path.join(home, '.gemini', 'google_accounts.json');
+                    if (fs.existsSync(gAccPath)) {
+                        const gRaw = fs.readFileSync(gAccPath, 'utf-8');
+                        const gParsed = JSON.parse(gRaw);
+                        if (gParsed.active && gParsed.active !== email) {
+                            if (!Array.isArray(gParsed.old)) { gParsed.old = []; }
+                            if (!gParsed.old.includes(gParsed.active)) {
+                                gParsed.old.unshift(gParsed.active);
+                            }
+                        }
+                        gParsed.active = email;
+                        fs.writeFileSync(gAccPath, JSON.stringify(gParsed, null, 2), 'utf-8');
+                    }
+                }
+            } catch (gErr) {
+                console.warn('[KeyringManager] Failed to update google_accounts.json:', gErr);
+            }
+
+            return success;
         } catch (err) {
             console.error('[KeyringManager] Failed to set OS Keyring credentials:', err);
             return false;
         }
+    }
+
+    /**
+     * Returns the active account email currently used by the Antigravity CLI (agy).
+     * Reads from the OS Keyring entry (gemini:antigravity) and falls back to ~/.gemini/google_accounts.json.
+     */
+    static getCurrentCliEmail(): string | null {
+        try {
+            const kr = this.getAntigravityCredentials();
+            if (kr && kr.id_token_email) {
+                return kr.id_token_email;
+            }
+        } catch (e) {}
+
+        try {
+            const home = process.env.USERPROFILE || process.env.HOME || '';
+            if (home) {
+                const gAccPath = path.join(home, '.gemini', 'google_accounts.json');
+                if (fs.existsSync(gAccPath)) {
+                    const gParsed = JSON.parse(fs.readFileSync(gAccPath, 'utf-8'));
+                    if (gParsed && gParsed.active) {
+                        return gParsed.active;
+                    }
+                }
+            }
+        } catch (e) {}
+
+        return null;
     }
 
     /**

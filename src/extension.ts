@@ -142,6 +142,16 @@ temp/
             const authStatus = await DBManager.readAuthStatus(dbPath);
             const index = AccountManager.loadIndex();
 
+            // 同步 CLI 活动账号
+            const cliEmail = KeyringManager.getCurrentCliEmail();
+            if (cliEmail) {
+                const cliMatch = index.accounts.find(a => a.email.toLowerCase() === cliEmail.toLowerCase());
+                if (cliMatch && index.current_cli_account_id !== cliMatch.id) {
+                    index.current_cli_account_id = cliMatch.id;
+                    AccountManager.saveIndex(index);
+                }
+            }
+
             if (authStatus.state === 'logged_out') {
                 return false;
             }
@@ -928,8 +938,60 @@ temp/
     });
 
     let switchAccountCommand = vscode.commands.registerCommand('antigravity-mission-hub.switchAccount', async (item: any) => {
-        const accountId = item.accountId;
+        const accountId = typeof item === 'string' ? item : (item?.accountId || item?.id);
         if (!accountId) { return; }
+        const target: 'ide' | 'cli' | 'both' = (item && item.target) ? item.target : 'ide';
+
+        if (target === 'cli') {
+            await vscode.window.withProgress({
+                location: vscode.ProgressLocation.Notification,
+                title: 'Switching Antigravity CLI Account...',
+                cancellable: false
+            }, async (progress) => {
+                try {
+                    progress.report({ message: t('loadingAccountInfo') });
+                    const account = AccountManager.loadAccount(accountId);
+                    if (!account.token) {
+                        throw new Error(vscode.env.language.startsWith('zh') ? '该账号暂无 Token' : 'The account has no Token');
+                    }
+                    let token = account.token;
+                    if (Date.now() / 1000 > token.expiry_timestamp - 300) {
+                        progress.report({ message: t('refreshingToken') });
+                        const refreshed = await AccountManager.refreshToken(token.refresh_token);
+                        token.access_token = refreshed.accessToken;
+                        token.expiry_timestamp = Math.floor(Date.now() / 1000) + refreshed.expiresIn;
+                        account.token = token;
+                        AccountManager.saveAccount(account);
+                    }
+
+                    progress.report({ message: 'Synchronizing OS Keyring & CLI config...' });
+                    KeyringManager.setAntigravityCredentials(
+                        token.access_token,
+                        cleanRefreshToken(token.refresh_token),
+                        account.email,
+                        token.expiry_timestamp
+                    );
+
+                    account.last_used = Date.now();
+                    AccountManager.saveAccount(account);
+
+                    const index = AccountManager.loadIndex();
+                    index.current_cli_account_id = accountId;
+                    AccountManager.saveIndex(index);
+
+                    accountTreeProvider.refresh();
+                    DashboardProvider.refresh();
+                    updateStatusBar();
+
+                    vscode.window.showInformationMessage(
+                        `💻 Antigravity CLI (agy) active account switched to: ${account.email}`
+                    );
+                } catch (e: any) {
+                    vscode.window.showErrorMessage(`CLI switch failed: ${e.message}`);
+                }
+            });
+            return;
+        }
 
         const config = vscode.workspace.getConfiguration('antigravity-mission-hub');
         const switchMode = config.get<string>('switchMode', 'advanced');
@@ -1067,17 +1129,25 @@ temp/
                     } catch (e) {}
                 }
 
-                // 确保 OS Keyring (Windows Credential Manager / macOS Keychain / Linux Secret Service) 预先同步
-                try {
-                    KeyringManager.setAntigravityCredentials(
-                        token.access_token,
-                        cleanRefreshToken(token.refresh_token),
-                        account.email,
-                        token.expiry_timestamp
-                    );
-                } catch (krErr) {
-                    console.warn('[Extension] OS Keyring pre-sync warning:', krErr);
+                // 当 target === 'both' 时同步 OS Keyring 与 CLI 配置
+                if (target === 'both') {
+                    try {
+                        KeyringManager.setAntigravityCredentials(
+                            token.access_token,
+                            cleanRefreshToken(token.refresh_token),
+                            account.email,
+                            token.expiry_timestamp
+                        );
+                        index.current_cli_account_id = accountId;
+                        AccountManager.saveIndex(index);
+                    } catch (krErr) {
+                        console.warn('[Extension] OS Keyring pre-sync warning:', krErr);
+                    }
                 }
+
+                const currentWorkspacePath = (vscode.workspace.workspaceFolders && vscode.workspace.workspaceFolders.length > 0)
+                    ? vscode.workspace.workspaceFolders[0].uri.fsPath
+                    : undefined;
 
                 await SwitcherProxy.executeExternalSwitch(
                     token.access_token,
@@ -1088,7 +1158,9 @@ temp/
                     accountAvatar,
                     dbPathOverride || undefined,
                     Object.keys(exePathConfig).length > 0 ? exePathConfig : undefined,
-                    processWaitSeconds
+                    processWaitSeconds,
+                    target === 'both',
+                    currentWorkspacePath
                 );
 
                 progress.report({ message: t('requestingRestart') });
@@ -1108,12 +1180,49 @@ temp/
         });
     });
 
-    let openDashboardCommand = vscode.commands.registerCommand('antigravity-mission-hub.openDashboard', async () => {
-        DashboardProvider.createOrShow(context.extensionUri);
-        const accountChanged = await syncWithIdeAccount();
-        if (accountChanged) {
-            DashboardProvider.refresh();
+    let switchCliAccountCommand = vscode.commands.registerCommand('antigravity-mission-hub.switchCliAccount', async (item: any) => {
+        let accountId = typeof item === 'string' ? item : (item?.accountId || item?.id);
+        if (!accountId) {
+            const index = AccountManager.loadIndex();
+            const picks = index.accounts.map(a => ({ label: a.name || a.email.split('@')[0], description: a.email, id: a.id }));
+            const sel = await vscode.window.showQuickPick(picks, { placeHolder: 'Select account for Antigravity CLI (agy)' });
+            if (!sel) return;
+            accountId = sel.id;
         }
+        await vscode.commands.executeCommand('antigravity-mission-hub.switchAccount', { accountId, target: 'cli' });
+    });
+    context.subscriptions.push(switchCliAccountCommand);
+
+    let switchIdeAccountCommand = vscode.commands.registerCommand('antigravity-mission-hub.switchIdeAccount', async (item: any) => {
+        let accountId = typeof item === 'string' ? item : (item?.accountId || item?.id);
+        if (!accountId) {
+            const index = AccountManager.loadIndex();
+            const picks = index.accounts.map(a => ({ label: a.name || a.email.split('@')[0], description: a.email, id: a.id }));
+            const sel = await vscode.window.showQuickPick(picks, { placeHolder: 'Select account for Antigravity IDE' });
+            if (!sel) return;
+            accountId = sel.id;
+        }
+        await vscode.commands.executeCommand('antigravity-mission-hub.switchAccount', { accountId, target: 'ide' });
+    });
+    context.subscriptions.push(switchIdeAccountCommand);
+
+    let switchBothAccountCommand = vscode.commands.registerCommand('antigravity-mission-hub.switchBothAccount', async (item: any) => {
+        let accountId = typeof item === 'string' ? item : (item?.accountId || item?.id);
+        if (!accountId) {
+            const index = AccountManager.loadIndex();
+            const picks = index.accounts.map(a => ({ label: a.name || a.email.split('@')[0], description: a.email, id: a.id }));
+            const sel = await vscode.window.showQuickPick(picks, { placeHolder: 'Select account for both IDE and CLI' });
+            if (!sel) return;
+            accountId = sel.id;
+        }
+        await vscode.commands.executeCommand('antigravity-mission-hub.switchAccount', { accountId, target: 'both' });
+    });
+    context.subscriptions.push(switchBothAccountCommand);
+
+    let openDashboardCommand = vscode.commands.registerCommand('antigravity-mission-hub.openDashboard', async () => {
+        await syncWithIdeAccount();
+        DashboardProvider.createOrShow(context.extensionUri);
+        DashboardProvider.refresh();
         updateStatusBar();
     });
 

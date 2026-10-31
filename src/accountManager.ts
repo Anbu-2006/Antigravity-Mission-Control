@@ -40,6 +40,7 @@ export interface AccountSummary {
 export interface AccountIndex {
     accounts: AccountSummary[];
     current_account_id: string | null;
+    current_cli_account_id?: string | null;
     ui_state?: {
         currentView?: string;
         listSortKey?: string;

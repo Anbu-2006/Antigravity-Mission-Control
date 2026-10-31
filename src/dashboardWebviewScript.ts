@@ -7,6 +7,8 @@ const vscode = acquireVsCodeApi();
 const state = vscode.getState() || {};
 let accounts = ACCOUNTS_PLACEHOLDER;
 let groupsConfig = GROUPS_PLACEHOLDER;
+let currentIdeEmail = IDE_EMAIL_PLACEHOLDER;
+let currentCliEmail = CLI_EMAIL_PLACEHOLDER;
 let activeAccountId = state.activeAccountId;
 let serviceStatus = SERVICE_STATUS_PLACEHOLDER;
 let groupModelScope = 'current';
@@ -85,14 +87,11 @@ function getDisplayName(name) {
     return n;
 }
 
-if (!activeAccountId || !accounts.find(a => a.id === activeAccountId)) {
-    const current = accounts.find(a => a.isCurrent);
-    activeAccountId = current ? current.id : (accounts[0] ? accounts[0].id : null);
-}
-
 function ensureActive() {
-    if (!accounts.find(a => a.id === activeAccountId) && accounts.length > 0) {
-        activeAccountId = accounts[0].id;
+    const ideAcc = accounts.find(a => a.isIdeCurrent || a.isCurrent);
+    if (!activeAccountId || !accounts.find(a => a.id === activeAccountId)) {
+        activeAccountId = ideAcc ? ideAcc.id : (accounts[0] ? accounts[0].id : null);
+        vscode.setState({ activeAccountId });
     }
 }
 ensureActive();
@@ -103,8 +102,18 @@ window.addEventListener('message', event => {
         groupsConfig = m.config; 
         renderGroupsList(); 
     } else if (m.command === 'updateAccounts') {
+        const prevIdeEmail = currentIdeEmail;
         accounts = m.accounts;
+        if (m.ideEmail !== undefined) currentIdeEmail = m.ideEmail;
+        if (m.cliEmail !== undefined) currentCliEmail = m.cliEmail;
         if (m.uiState) state.uiState = m.uiState;
+        if (m.ideEmail && m.ideEmail !== prevIdeEmail) {
+            const newIdeAcc = accounts.find(a => a.email && a.email.toLowerCase() === m.ideEmail.toLowerCase());
+            if (newIdeAcc) {
+                activeAccountId = newIdeAcc.id;
+                vscode.setState({ activeAccountId });
+            }
+        }
         ensureActive();
         renderAll();
     } else if (m.command === 'serviceStatus') {
@@ -119,7 +128,17 @@ function updateGlobalRefresh(val) {
 
 function pctColor(p) { return p > 50 ? '#00ff66' : p > 20 ? '#d4a843' : '#ff2a2a'; }
 
+function updateNavStatus() {
+    const ideEl = document.getElementById('navIdeAccount');
+    const cliEl = document.getElementById('navCliAccount');
+    const ideAcc = accounts.find(a => a.isIdeCurrent || a.isCurrent);
+    const cliAcc = accounts.find(a => a.isCliCurrent);
+    if (ideEl) ideEl.textContent = ideAcc ? ideAcc.email : (currentIdeEmail || 'None');
+    if (cliEl) cliEl.textContent = cliAcc ? cliAcc.email : (currentCliEmail || 'None');
+}
+
 function renderAll() {
+    updateNavStatus();
     renderFocusNode();
     renderFleetGrid();
     renderTrafficNetwork();
@@ -247,15 +266,24 @@ function renderFocusNode() {
 
     const tier = (acc.quota && acc.quota.tier) ? acc.quota.tier.toUpperCase() : 'STANDARD';
     const displayName = acc.name || acc.email.split('@')[0];
+    const isIdeCur = !!(acc.isIdeCurrent || acc.isCurrent);
+    const isCliCur = !!acc.isCliCurrent;
+    let badges = '';
+    if (isIdeCur) badges += '<span class="live-indicator ide-indicator">⚡ IDE ACTIVE</span>';
+    if (isCliCur) badges += '<span class="live-indicator cli-indicator">💻 CLI ACTIVE</span>';
+    let actBtns = '';
+    if (!isIdeCur) actBtns += \`<button class="action-btn" title="Activate only in Antigravity IDE (restarts IDE)" onclick="doSwitch('\${acc.id}','\${acc.email}','ide')">⚡ ACTIVATE IDE</button>\`;
+    if (!isCliCur) actBtns += \`<button class="action-btn cyan" title="Activate only in Antigravity CLI / agy (instant, no restart)" onclick="doSwitch('\${acc.id}','\${acc.email}','cli')">💻 ACTIVATE CLI</button>\`;
+    if (!isIdeCur && !isCliCur) actBtns += \`<button class="action-btn ghost" title="Activate in both IDE and CLI simultaneously" onclick="doSwitch('\${acc.id}','\${acc.email}','both')">⚡💻 BOTH</button>\`;
     
     let h = \`
         <div class="hero-top">
             <div class="hero-info">
-                <div class="hero-name">\${displayName}\${acc.isCurrent ? '<span class="live-indicator">LIVE</span>' : ''}</div>
+                <div class="hero-name">\${displayName}\${badges}</div>
                 <div class="hero-email">\${acc.email} | \${tier}</div>
             </div>
             <div class="hero-actions">
-                \${!acc.isCurrent ? \`<button class="action-btn" onclick="doSwitch('\${acc.id}','\${acc.email}')">ACTIVATE</button>\` : ''}
+                \${actBtns}
                 <button class="action-btn ghost" onclick="doRefresh('\${acc.id}')">REFRESH</button>
                 <button class="action-btn ghost" onclick="doExportToken('\${acc.id}')">EXPORT</button>
                 <button class="action-btn danger" onclick="doDelete('\${acc.id}','\${acc.email}')">DELETE</button>
@@ -382,13 +410,19 @@ function renderFleetGrid() {
         const c = isErr ? 'var(--red)' : pctColor(p);
         const name = acc.name || acc.email.split('@')[0];
 
+        const isIdeCur = !!(acc.isIdeCurrent || acc.isCurrent);
+        const isCliCur = !!acc.isCliCurrent;
         h += \`
         <div class="t-node-v \${isSel ? 'active' : ''}" onclick="selectNode('\${acc.id}')">
-            \${isCur ? \`<div class="t-indicator" style="background:var(--green);box-shadow:0 0 5px var(--green)"></div>\` : ''}
+            \${isIdeCur ? \`<div class="t-indicator" style="background:var(--green);box-shadow:0 0 5px var(--green)"></div>\` : (isCliCur ? \`<div class="t-indicator" style="background:var(--cyan);box-shadow:0 0 5px var(--cyan)"></div>\` : '')}
             <div class="t-ring" style="border-color:\${c};color:\${c}">\${isErr ? '!' : p}</div>
             <div class="t-info">
                 <div class="t-name">\${name}</div>
                 <div class="t-email">\${acc.email}</div>
+                <div class="t-badges-wrap">
+                    \${isIdeCur ? '<span class="t-badge t-badge-ide">IDE</span>' : ''}
+                    \${isCliCur ? '<span class="t-badge t-badge-cli">CLI</span>' : ''}
+                </div>
             </div>
         </div>\`;
     });
@@ -402,7 +436,7 @@ function selectNode(id) {
     renderAll();
 }
 
-function doSwitch(id, em) { vscode.postMessage({ command: 'switch', accountId: id, email: em }); }
+function doSwitch(id, em, target = 'ide') { activeAccountId = id; vscode.setState({ activeAccountId }); renderAll(); vscode.postMessage({ command: 'switch', accountId: id, email: em, target: target }); }
 function doRefresh(id, silent=false) { vscode.postMessage({ command: 'refresh', accountId: id, silent }); }
 function doRefreshAll() { vscode.postMessage({ command: 'refreshAll' }); }
 function doAdd() { vscode.postMessage({ command: 'addAccount' }); }

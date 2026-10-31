@@ -62,7 +62,7 @@ export class DBManager {
         fs.writeFileSync(dbPath, buffer);
     }
 
-    static async injectToken(accessToken: string, refreshToken: string, expiry: number, email: string, name?: string, avatarUrl?: string, dbPath?: string) {
+    static async injectToken(accessToken: string, refreshToken: string, expiry: number, email: string, name?: string, avatarUrl?: string, dbPath?: string, syncKeyring: boolean = true) {
         const targetPaths = dbPath && dbPath.trim() ? [dbPath.trim()] : getAllVSCDBPaths();
 
         for (const resolvedDbPath of targetPaths) {
@@ -200,25 +200,29 @@ export class DBManager {
                     console.error('Failed to inject antigravityAuthStatus', e);
                 }
 
-                // 9. 更新 ~/.gemini/google_accounts.json
-                try {
-                    const home = process.env.USERPROFILE || process.env.HOME || '';
-                    if (home) {
-                        const gAccPath = path.join(home, '.gemini', 'google_accounts.json');
-                        if (fs.existsSync(gAccPath)) {
-                            const gRaw = fs.readFileSync(gAccPath, 'utf-8');
-                            const gParsed = JSON.parse(gRaw);
-                            gParsed.active = email;
-                            fs.writeFileSync(gAccPath, JSON.stringify(gParsed, null, 2), 'utf-8');
+                // 9. 更新 ~/.gemini/google_accounts.json (仅当 syncKeyring 为 true 时)
+                if (syncKeyring) {
+                    try {
+                        const home = process.env.USERPROFILE || process.env.HOME || '';
+                        if (home) {
+                            const gAccPath = path.join(home, '.gemini', 'google_accounts.json');
+                            if (fs.existsSync(gAccPath)) {
+                                const gRaw = fs.readFileSync(gAccPath, 'utf-8');
+                                const gParsed = JSON.parse(gRaw);
+                                gParsed.active = email;
+                                fs.writeFileSync(gAccPath, JSON.stringify(gParsed, null, 2), 'utf-8');
+                            }
                         }
-                    }
-                } catch (e) { /* ignore */ }
+                    } catch (e) { /* ignore */ }
+                }
 
-                // 10. 同步 OS Keyring (Windows Credential Manager / macOS Keychain / Linux Secret Service)
-                try {
-                    KeyringManager.setAntigravityCredentials(accessToken, refreshToken, email, expiry);
-                } catch (e) {
-                    console.error('Failed to sync OS Keyring', e);
+                // 10. 同步 OS Keyring (Windows Credential Manager / macOS Keychain / Linux Secret Service) (仅当 syncKeyring 为 true 时)
+                if (syncKeyring) {
+                    try {
+                        KeyringManager.setAntigravityCredentials(accessToken, refreshToken, email, expiry);
+                    } catch (e) {
+                        console.error('Failed to sync OS Keyring', e);
+                    }
                 }
 
                 // 写回磁盘
@@ -283,20 +287,6 @@ export class DBManager {
     }
 
     static async readFullTokenInfo(dbPath?: string): Promise<{ access_token: string, refresh_token: string, expiry: number } | null> {
-        try {
-            const kr = KeyringManager.getAntigravityCredentials();
-            if (kr && kr.token && kr.token.access_token && kr.token.refresh_token) {
-                const expMs = kr.token.expiry ? new Date(kr.token.expiry).getTime() : Date.now() + 3600000;
-                return {
-                    access_token: kr.token.access_token,
-                    refresh_token: kr.token.refresh_token,
-                    expiry: Math.floor(expMs / 1000)
-                };
-            }
-        } catch (e) {
-            console.warn('[DBManager] Failed to read Keyring for readFullTokenInfo:', e);
-        }
-
         const resolvedDbPath = this.resolveDbPath(dbPath);
 
         if (!fs.existsSync(resolvedDbPath)) {
@@ -482,23 +472,101 @@ export class DBManager {
             if (accessToken && refreshToken) {
                 return { access_token: accessToken, refresh_token: refreshToken, expiry: expiry };
             }
-            return null;
-
         } catch (e) {
             console.error('Failed to read access token from DB', e);
-            return null;
         } finally {
             db.close();
         }
+
+        // Fallback to Keyring if DB doesn't have it
+        try {
+            const kr = KeyringManager.getAntigravityCredentials();
+            if (kr && kr.token && kr.token.access_token && kr.token.refresh_token) {
+                const expMs = kr.token.expiry ? new Date(kr.token.expiry).getTime() : Date.now() + 3600000;
+                return {
+                    access_token: kr.token.access_token,
+                    refresh_token: kr.token.refresh_token,
+                    expiry: Math.floor(expMs / 1000)
+                };
+            }
+        } catch (e) {
+            console.warn('[DBManager] Failed to read Keyring for readFullTokenInfo fallback:', e);
+        }
+
+        return null;
     }
 
+    /**
+     * Reads the active Antigravity IDE authentication status strictly from state.vscdb.
+     */
     static async readAuthStatus(dbPath?: string): Promise<{
         state: 'authenticated' | 'logged_out' | 'missing';
         email?: string;
         name?: string;
         apiKey?: string;
     }> {
-        // 1. Supreme Source of Truth: OS Keyring (Windows Credential Manager / macOS Keychain / Linux Secret Service)
+        const resolvedDbPath = this.resolveDbPath(dbPath);
+
+        if (fs.existsSync(resolvedDbPath)) {
+            try {
+                const db = await this.openDb(resolvedDbPath);
+                try {
+                    // 1. Check antigravityAuthStatus (Primary IDE session token & status)
+                    try {
+                        const stmt = db.prepare("SELECT value FROM ItemTable WHERE key = ?");
+                        stmt.bind(["antigravityAuthStatus"]);
+                        if (stmt.step()) {
+                            const row = stmt.getAsObject();
+                            if (row && row.value) {
+                                const rawValue = String(row.value).trim();
+                                if (rawValue && rawValue !== 'null') {
+                                    const parsed = JSON.parse(rawValue);
+                                    if (parsed && parsed.email) {
+                                        stmt.free();
+                                        return {
+                                            state: 'authenticated',
+                                            email: parsed.email,
+                                            name: parsed.name || parsed.email.split('@')[0],
+                                            apiKey: parsed.apiKey
+                                        };
+                                    }
+                                }
+                            }
+                        }
+                        stmt.free();
+                    } catch (e) {}
+
+                    // 2. Check google.google-antigravity (agy.onboarding.lastLoginUsername)
+                    try {
+                        const agStmt = db.prepare("SELECT value FROM ItemTable WHERE key = ?");
+                        agStmt.bind(["google.google-antigravity"]);
+                        if (agStmt.step()) {
+                            const agRow = agStmt.getAsObject();
+                            if (agRow && agRow.value) {
+                                const parsed = JSON.parse(String(agRow.value));
+                                const storage = parsed["antigravity-storage"] || {};
+                                const email = storage["agy.onboarding.lastLoginUsername"];
+                                if (email) {
+                                    agStmt.free();
+                                    return {
+                                        state: 'authenticated',
+                                        email: email,
+                                        name: email.split('@')[0]
+                                    };
+                                }
+                            }
+                        }
+                        agStmt.free();
+                    } catch (e) {}
+                } finally {
+                    db.close();
+                }
+            } catch (e) {
+                console.error('Failed to read auth status from DB', e);
+            }
+        }
+
+        // 3. Fallback: OS Keyring
         try {
             const kr = KeyringManager.getAntigravityCredentials();
             if (kr && kr.id_token_email) {
@@ -510,78 +578,44 @@ export class DBManager {
                 };
             }
         } catch (krErr) {
-            console.warn('[DBManager] Failed to read OS Keyring credentials:', krErr);
+            console.warn('[DBManager] Failed to read OS Keyring fallback credentials:', krErr);
         }
 
-        const resolvedDbPath = this.resolveDbPath(dbPath);
+        return { state: 'missing' };
+    }
 
-        if (!fs.existsSync(resolvedDbPath)) {
-            return { state: 'missing' };
-        }
-
-        const db = await this.openDb(resolvedDbPath);
-
+    /**
+     * Reads the active Antigravity CLI (agy) authentication status.
+     * Supreme source of truth for CLI is OS Keyring & ~/.gemini/google_accounts.json.
+     */
+    static readCLIAuthStatus(): {
+        state: 'authenticated' | 'missing';
+        email?: string;
+        name?: string;
+        apiKey?: string;
+    } {
         try {
-            // 2. Check google.google-antigravity (agy.onboarding.lastLoginUsername)
-            try {
-                const agStmt = db.prepare("SELECT value FROM ItemTable WHERE key = ?");
-                agStmt.bind(["google.google-antigravity"]);
-                if (agStmt.step()) {
-                    const agRow = agStmt.getAsObject();
-                    if (agRow && agRow.value) {
-                        const parsed = JSON.parse(String(agRow.value));
-                        const storage = parsed["antigravity-storage"] || {};
-                        const email = storage["agy.onboarding.lastLoginUsername"];
-                        if (email) {
-                            agStmt.free();
-                            return {
-                                state: 'authenticated',
-                                email: email,
-                                name: email.split('@')[0]
-                            };
-                        }
-                    }
-                }
-                agStmt.free();
-            } catch (e) {}
-
-            const stmt = db.prepare("SELECT value FROM ItemTable WHERE key = ?");
-            stmt.bind(["antigravityAuthStatus"]);
-
-            if (!stmt.step()) {
-                stmt.free();
-                return { state: 'missing' };
+            const kr = KeyringManager.getAntigravityCredentials();
+            if (kr && kr.id_token_email) {
+                return {
+                    state: 'authenticated',
+                    email: kr.id_token_email,
+                    name: kr.id_token_email.split('@')[0],
+                    apiKey: kr.token ? kr.token.access_token : undefined
+                };
             }
+        } catch (e) {}
 
-            const row = stmt.getAsObject();
-            stmt.free();
-
-            if (!row || !row.value) {
-                return { state: 'missing' };
-            }
-
-            const rawValue = String(row.value).trim();
-            if (!rawValue || rawValue === 'null') {
-                return { state: 'logged_out' };
-            }
-
-            const parsed = JSON.parse(rawValue);
-            if (!parsed || !parsed.email) {
-                return { state: 'logged_out' };
-            }
-
+        const cliEmail = KeyringManager.getCurrentCliEmail();
+        if (cliEmail) {
             return {
                 state: 'authenticated',
-                email: parsed.email,
-                name: parsed.name,
-                apiKey: parsed.apiKey
+                email: cliEmail,
+                name: cliEmail.split('@')[0]
             };
-        } catch (e) {
-            console.error('Failed to read auth status from DB', e);
-            return { state: 'missing' };
-        } finally {
-            db.close();
         }
+
+        return { state: 'missing' };
     }
 
     private static createOAuthField(accessToken: string, refreshToken: string, expiry: number): Buffer {

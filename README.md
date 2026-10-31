@@ -1,6 +1,6 @@
 # 🛡️ Antigravity Mission Hub
 
-[![Version](https://img.shields.io/badge/version-1.1.0-blueviolet.svg?style=for-the-badge)](https://github.com/Anbu-2006/Antigravity-Mission-Control)
+[![Version](https://img.shields.io/badge/version-1.2.1-blueviolet.svg?style=for-the-badge)](https://github.com/Anbu-2006/Antigravity-Mission-Control)
 [![VS Code](https://img.shields.io/badge/VS_Code-^1.95.0-blue.svg?style=for-the-badge&logo=visual-studio-code)](https://code.visualstudio.com)
 [![Platform](https://img.shields.io/badge/Platform-Windows%20%7C%20macOS%20%7C%20Linux-brightgreen.svg?style=for-the-badge)](https://github.com/Anbu-2006/Antigravity-Mission-Control)
 [![License](https://img.shields.io/badge/License-MIT-orange.svg?style=for-the-badge)](https://opensource.org/licenses/MIT)

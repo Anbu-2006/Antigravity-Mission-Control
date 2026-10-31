@@ -2,6 +2,7 @@ import * as vscode from 'vscode';
 import { AccountManager, Account, TokenInfo } from './accountManager';
 import { ProcessManager } from './processManager';
 import { DBManager } from './dbManager';
+import { KeyringManager } from './keyringManager';
 
 export class AccountTreeProvider implements vscode.TreeDataProvider<AccountItem | QuotaItem> {
     private _onDidChangeTreeData: vscode.EventEmitter<AccountItem | QuotaItem | undefined | void> = new vscode.EventEmitter<AccountItem | QuotaItem | undefined | void>();
@@ -19,14 +20,17 @@ export class AccountTreeProvider implements vscode.TreeDataProvider<AccountItem 
         if (!element) {
             // Root - List accounts
             const index = AccountManager.loadIndex();
+            const cliEmail = KeyringManager.getCurrentCliEmail();
             return index.accounts.map(acc => {
-                const isCurrent = acc.id === index.current_account_id;
+                const isIdeCurrent = acc.id === index.current_account_id;
+                const isCliCurrent = !!((cliEmail && acc.email && cliEmail.toLowerCase() === acc.email.toLowerCase()) || (acc.id === index.current_cli_account_id));
                 return new AccountItem(
                     acc.email,
                     acc.name,
                     acc.id,
-                    isCurrent ? vscode.TreeItemCollapsibleState.Expanded : vscode.TreeItemCollapsibleState.Collapsed,
-                    isCurrent
+                    (isIdeCurrent || isCliCurrent) ? vscode.TreeItemCollapsibleState.Expanded : vscode.TreeItemCollapsibleState.Collapsed,
+                    isIdeCurrent,
+                    isCliCurrent
                 );
             });
         } else {
@@ -66,14 +70,25 @@ class AccountItem extends vscode.TreeItem {
         public readonly name: string,
         public readonly accountId: string,
         public readonly collapsibleState: vscode.TreeItemCollapsibleState,
-        public readonly isCurrent: boolean
+        public readonly isIdeCurrent: boolean,
+        public readonly isCliCurrent: boolean = false
     ) {
         super(email, collapsibleState);
-        this.tooltip = `${name} (${email})`;
-        this.description = name;
-        this.contextValue = 'account';
-        if (isCurrent) {
+        let tag = '';
+        if (isIdeCurrent && isCliCurrent) {
+            tag = ' [IDE + CLI]';
+        } else if (isIdeCurrent) {
+            tag = ' [IDE]';
+        } else if (isCliCurrent) {
+            tag = ' [CLI]';
+        }
+        this.tooltip = `${name} (${email})${tag}`;
+        this.description = `${name}${tag}`;
+        this.contextValue = isIdeCurrent ? 'accountCurrent' : 'account';
+        if (isIdeCurrent) {
             this.iconPath = new vscode.ThemeIcon('check', new vscode.ThemeColor('charts.green'));
+        } else if (isCliCurrent) {
+            this.iconPath = new vscode.ThemeIcon('terminal', new vscode.ThemeColor('charts.blue'));
         } else {
             this.iconPath = new vscode.ThemeIcon('account');
         }

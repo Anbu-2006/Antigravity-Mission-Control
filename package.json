@@ -92,6 +92,21 @@
       {
         "command": "antigravity-mission-hub.installNode",
         "title": "Antigravity: Install Node.js Environment"
+      },
+      {
+        "command": "antigravity-mission-hub.switchCliAccount",
+        "title": "Antigravity: Switch CLI (agy) Account",
+        "icon": "$(terminal)"
+      },
+      {
+        "command": "antigravity-mission-hub.switchIdeAccount",
+        "title": "Antigravity: Switch IDE Account",
+        "icon": "$(zap)"
+      },
+      {
+        "command": "antigravity-mission-hub.switchBothAccount",
+        "title": "Antigravity: Switch Both (IDE & CLI) Account",
+        "icon": "$(sync)"
       }
     ],
     "keybindings": [

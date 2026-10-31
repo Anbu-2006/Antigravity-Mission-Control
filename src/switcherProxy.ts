@@ -286,7 +286,9 @@ export class SwitcherProxy {
         avatarUrl?: string,
         dbPathOverride?: string,
         exePathOverride?: { win32?: string; darwin?: string; linux?: string },
-        processWaitSeconds: number = 10
+        processWaitSeconds: number = 10,
+        syncKeyring: boolean = true,
+        workspacePath?: string
     ) {
         const tempDir = os.tmpdir();
         const timestamp = Date.now();
@@ -338,6 +340,8 @@ const USER_STATUS_TEMPLATE = ${JSON.stringify(DEFAULT_USER_STATUS_TEMPLATE_B64)}
 const PLATFORM = ${JSON.stringify(platform)};
 const EXE_PATH_OVERRIDE = ${JSON.stringify(exePathOverride || {})};
 const PROCESS_WAIT_SECONDS = ${processWaitSeconds};
+const SYNC_KEYRING = ${syncKeyring};
+const WORKSPACE_PATH = ${JSON.stringify(workspacePath || "")};
 
 // === 日志 ===
 function log(msg) {
@@ -357,11 +361,11 @@ function isAntigravityRunning() {
         if (PLATFORM === 'win32') {
             const result = execSync('tasklist /NH 2>nul', { encoding: 'utf-8', shell: true, windowsHide: true });
             const low = result.toLowerCase();
-            const running = low.includes('antigravity.exe') || low.includes('antigravity ide.exe') || low.includes('language_server.exe') || low.includes('agy.exe');
+            const running = low.includes('antigravity.exe') || low.includes('antigravity ide.exe') || low.includes('language_server.exe');
             log('进程检测结果: ' + (running ? '运行中' : '已退出'));
             return running;
         } else {
-            const result = execSync('pgrep -i antigravity || pgrep -i language_server || pgrep -i agy || true', { encoding: 'utf-8' });
+            const result = execSync('pgrep -i antigravity || pgrep -i language_server || true', { encoding: 'utf-8' });
             return result.trim().length > 0;
         }
     } catch (e) {
@@ -375,7 +379,7 @@ function killAllAntigravity() {
     log('正在强制关闭所有 Antigravity 进程与 language_server...');
     try {
         if (PLATFORM === 'win32') {
-            const targets = ['agy.exe', 'language_server.exe', 'Antigravity IDE.exe', 'Antigravity.exe'];
+            const targets = ['language_server.exe', 'Antigravity IDE.exe', 'Antigravity.exe'];
             for (const tgt of targets) {
                 try {
                     execSync('taskkill /F /IM "' + tgt + '" /T 2>nul', { 
@@ -386,11 +390,10 @@ function killAllAntigravity() {
                     });
                 } catch (e) {}
             }
-            log('taskkill 命令已执行 (含 agy.exe 与 language_server.exe)');
+            log('taskkill 命令已执行 (含 language_server.exe, 不含外部 agy.exe)');
         } else {
             try {
-                execSync('pkill -9 -i agy || true', { encoding: 'utf-8' });
-                execSync('pkill -9 -i language_server || true', { encoding: 'utf-8' });
+                                execSync('pkill -9 -i language_server || true', { encoding: 'utf-8' });
                 execSync('pkill -9 -i "antigravity ide" || true', { encoding: 'utf-8' });
                 execSync('pkill -9 -i antigravity || true', { encoding: 'utf-8' });
                 log('pkill 命令已执行 (含 language_server)');
@@ -778,33 +781,37 @@ async function injectToken() {
                 log('antigravityAuthStatus 注入异常: ' + e.message);
             }
 
-            // 9. 更新 ~/.gemini/google_accounts.json
-            try {
-                const home = process.env.USERPROFILE || process.env.HOME || '';
-                if (home) {
-                    const gAccPath = path.join(home, '.gemini', 'google_accounts.json');
-                    if (fs.existsSync(gAccPath)) {
-                        const gRaw = fs.readFileSync(gAccPath, 'utf-8');
-                        const gParsed = JSON.parse(gRaw);
-                        gParsed.active = EMAIL;
-                        fs.writeFileSync(gAccPath, JSON.stringify(gParsed, null, 2), 'utf-8');
-                        log('~/.gemini/google_accounts.json active 更新成功: ' + EMAIL);
+            // 9. 更新 ~/.gemini/google_accounts.json (仅当 SYNC_KEYRING 为 true)
+            if (SYNC_KEYRING) {
+                try {
+                    const home = process.env.USERPROFILE || process.env.HOME || '';
+                    if (home) {
+                        const gAccPath = path.join(home, '.gemini', 'google_accounts.json');
+                        if (fs.existsSync(gAccPath)) {
+                            const gRaw = fs.readFileSync(gAccPath, 'utf-8');
+                            const gParsed = JSON.parse(gRaw);
+                            gParsed.active = EMAIL;
+                            fs.writeFileSync(gAccPath, JSON.stringify(gParsed, null, 2), 'utf-8');
+                            log('~/.gemini/google_accounts.json active 更新成功: ' + EMAIL);
+                        }
                     }
-                }
-            } catch (e) {}
+                } catch (e) {}
+            }
 
-            // 10. 同步 OS Keyring (Windows Credential Manager / macOS Keychain / Linux Secret Service)
-            try {
-                const keyringModulePath = path.join(OUT_DIR, 'keyringManager');
-                if (fs.existsSync(keyringModulePath + '.js') || fs.existsSync(keyringModulePath)) {
-                    const { KeyringManager } = require(keyringModulePath);
-                    KeyringManager.setAntigravityCredentials(ACCESS_TOKEN, REFRESH_TOKEN, EMAIL, EXPIRY);
-                    log('OS Keyring (Windows Credential Manager / Keychain / secret-tool) 更新成功: ' + EMAIL);
-                } else {
-                    log('KeyringManager 模块未找到: ' + keyringModulePath);
+            // 10. 同步 OS Keyring (仅当 SYNC_KEYRING 为 true)
+            if (SYNC_KEYRING) {
+                try {
+                    const keyringModulePath = path.join(OUT_DIR, 'keyringManager');
+                    if (fs.existsSync(keyringModulePath + '.js') || fs.existsSync(keyringModulePath)) {
+                        const { KeyringManager } = require(keyringModulePath);
+                        KeyringManager.setAntigravityCredentials(ACCESS_TOKEN, REFRESH_TOKEN, EMAIL, EXPIRY);
+                        log('OS Keyring (Windows Credential Manager / Keychain / secret-tool) 更新成功: ' + EMAIL);
+                    } else {
+                        log('KeyringManager 模块未找到: ' + keyringModulePath);
+                    }
+                } catch (e) {
+                    log('OS Keyring 更新异常: ' + (e.message || e));
                 }
-            } catch (e) {
-                log('OS Keyring 更新异常: ' + (e.message || e));
             }
 
             // 写回磁盘
@@ -882,8 +889,9 @@ function startIDE() {
             
             log('使用的 IDE 路径: ' + exePath);
 
+            const args = WORKSPACE_PATH ? [WORKSPACE_PATH] : [];
             if (exePath && fs.existsSync(exePath)) {
-                log('尝试方法1: spawn 直接启动 IDE: ' + exePath);
+                log('尝试方法1: spawn 直接启动 IDE: ' + exePath + (WORKSPACE_PATH ? ' ' + WORKSPACE_PATH : ''));
                 const cleanEnv = { ...process.env };
                 Object.keys(cleanEnv).forEach(key => {
                     if (key.startsWith('VSCODE_') || key.startsWith('ELECTRON_')) {
@@ -895,7 +903,7 @@ function startIDE() {
                     cleanEnv.HOME = cleanEnv.USERPROFILE;
                 }
 
-                const child = spawn(exePath, [], {
+                const child = spawn(exePath, args, {
                     detached: true,
                     stdio: 'ignore',
                     env: cleanEnv
@@ -905,12 +913,15 @@ function startIDE() {
                 return true;
             }
 
-            log('尝试方法2: 使用 cmd /c start 协议启动 IDE');
+            log('尝试方法2: 使用 cmd /c start 启动 IDE');
             try {
-                execSync('cmd /c start "" antigravity-ide://', { encoding: 'utf-8', timeout: 5000, windowsHide: true, shell: true });
+                const targetCmd = WORKSPACE_PATH
+                    ? ('cmd /c start "" "' + exePath + '" "' + WORKSPACE_PATH + '"')
+                    : ('cmd /c start "" "' + exePath + '"');
+                execSync(targetCmd, { encoding: 'utf-8', timeout: 5000, windowsHide: true, shell: true });
             } catch (e1) {
                 try {
-                    execSync('cmd /c start "" antigravity://', { encoding: 'utf-8', timeout: 5000, windowsHide: true, shell: true });
+                    execSync('cmd /c start "" antigravity-ide://', { encoding: 'utf-8', timeout: 5000, windowsHide: true, shell: true });
                 } catch (e2) {}
             }
 
@@ -985,7 +996,7 @@ function startIDE() {
 // === 主流程 ===
 async function main() {
     log('========================================');
-    log('Antigravity Mission Hub 账号切换代理启动 (v1.2.0)');
+    log('Antigravity Mission Hub 账号切换代理启动 (v1.2.1)');
     log('平台: ' + PLATFORM);
     log('主数据库: ' + PRIMARY_DB_PATH);
     log('========================================');
