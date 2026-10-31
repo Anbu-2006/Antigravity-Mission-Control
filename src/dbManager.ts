@@ -8,7 +8,8 @@ import {
     DB_KEY_AGENT_STATE,
     DB_KEY_ONBOARDING
 } from './constants';
-import { encodeVarint, removeField } from './utils';
+import { encodeVarint, removeField, buildUserStatusB64 } from './utils';
+import { KeyringManager } from './keyringManager';
 
 // sql.js WASM 初始化（单例，避免多次加载）
 let sqlJsPromise: Promise<any> | null = null;
@@ -23,7 +24,6 @@ export const STALE_SESSION_KEYS = [
     'antigravityAuthStatus',
     'antigravitySessionState',
     'antigravityQuotaCache',
-    'antigravityUnifiedStateSync.userStatus',
     'antigravityUnifiedStateSync.modelCredits',
     'antigravityUnifiedStateSync.modelPreferences',
     'antigravityUnifiedStateSync.activeTier',
@@ -62,7 +62,7 @@ export class DBManager {
         fs.writeFileSync(dbPath, buffer);
     }
 
-    static async injectToken(accessToken: string, refreshToken: string, expiry: number, email: string, dbPath?: string) {
+    static async injectToken(accessToken: string, refreshToken: string, expiry: number, email: string, name?: string, avatarUrl?: string, dbPath?: string) {
         const targetPaths = dbPath && dbPath.trim() ? [dbPath.trim()] : getAllVSCDBPaths();
 
         for (const resolvedDbPath of targetPaths) {
@@ -132,23 +132,93 @@ export class DBManager {
                 // 3. Onboarding 标记
                 db.run("INSERT OR REPLACE INTO ItemTable (key, value) VALUES (?, ?)", [KEY_ONBOARD, "true"]);
 
-                // 4. 清理残留认证状态 — 删除所有可能保留旧账号身份和配额缓存的键
+                // 4. 清理残留认证与配额缓存（保留已被更新的 userStatus）
                 for (const key of STALE_SESSION_KEYS) {
                     try {
                         db.run("DELETE FROM ItemTable WHERE key = ?", [key]);
                     } catch (e) { /* key may not exist */ }
                 }
 
-                // 5. 注入 antigravityAuthStatus 保证 IDE UI 和外部扩展毫秒级识别
+                // 5. 注入 antigravityUnifiedStateSync.userStatus 确保 Settings UI 和 AI Agent 显示正确身份
+                try {
+                    let existingUserStatusB64: string | undefined;
+                    try {
+                        const uStmt = db.prepare("SELECT value FROM ItemTable WHERE key = 'antigravityUnifiedStateSync.userStatus'");
+                        if (uStmt.step()) {
+                            existingUserStatusB64 = String(uStmt.getAsObject().value);
+                        }
+                        uStmt.free();
+                    } catch (uErr) { /* ignore */ }
+
+                    const userStatusB64 = buildUserStatusB64(name || email.split('@')[0], email, avatarUrl, existingUserStatusB64);
+                    db.run("INSERT OR REPLACE INTO ItemTable (key, value) VALUES ('antigravityUnifiedStateSync.userStatus', ?)", [userStatusB64]);
+                } catch (e) {
+                    console.error('Failed to inject antigravityUnifiedStateSync.userStatus', e);
+                }
+
+                // 6. 注入 google.google-antigravity (agy.onboarding.lastLoginUsername)
+                try {
+                    const ggaStmt = db.prepare("SELECT value FROM ItemTable WHERE key = 'google.google-antigravity'");
+                    if (ggaStmt.step()) {
+                        let valStr = String(ggaStmt.getAsObject().value);
+                        try {
+                            const parsed = JSON.parse(valStr);
+                            if (parsed && parsed['antigravity-storage']) {
+                                parsed['antigravity-storage']['agy.onboarding.lastLoginUsername'] = email;
+                                valStr = JSON.stringify(parsed);
+                            }
+                        } catch (jsonErr) {
+                            valStr = valStr.replace(/"agy\.onboarding\.lastLoginUsername":\s*"[^"]*"/g, `"agy.onboarding.lastLoginUsername":"${email}"`);
+                        }
+                        db.run("INSERT OR REPLACE INTO ItemTable (key, value) VALUES ('google.google-antigravity', ?)", [valStr]);
+                    }
+                    ggaStmt.free();
+                } catch (e) {
+                    console.error('Failed to update google.google-antigravity username', e);
+                }
+
+                // 7. 同步 antigravity.profileUrl
+                if (avatarUrl && avatarUrl.trim()) {
+                    try {
+                        db.run("INSERT OR REPLACE INTO ItemTable (key, value) VALUES ('antigravity.profileUrl', ?)", [avatarUrl.trim()]);
+                    } catch (e) {}
+                } else {
+                    try {
+                        db.run("DELETE FROM ItemTable WHERE key = 'antigravity.profileUrl'");
+                    } catch (e) {}
+                }
+
+                // 8. 注入 antigravityAuthStatus 保证 IDE UI 和外部扩展毫秒级识别
                 try {
                     const authStatusJson = JSON.stringify({
                         email: email,
-                        name: email.split('@')[0],
+                        name: name || email.split('@')[0],
                         apiKey: accessToken
                     });
                     db.run("INSERT OR REPLACE INTO ItemTable (key, value) VALUES (?, ?)", ["antigravityAuthStatus", authStatusJson]);
                 } catch (e) {
                     console.error('Failed to inject antigravityAuthStatus', e);
+                }
+
+                // 9. 更新 ~/.gemini/google_accounts.json
+                try {
+                    const home = process.env.USERPROFILE || process.env.HOME || '';
+                    if (home) {
+                        const gAccPath = path.join(home, '.gemini', 'google_accounts.json');
+                        if (fs.existsSync(gAccPath)) {
+                            const gRaw = fs.readFileSync(gAccPath, 'utf-8');
+                            const gParsed = JSON.parse(gRaw);
+                            gParsed.active = email;
+                            fs.writeFileSync(gAccPath, JSON.stringify(gParsed, null, 2), 'utf-8');
+                        }
+                    }
+                } catch (e) { /* ignore */ }
+
+                // 10. 同步 OS Keyring (Windows Credential Manager / macOS Keychain / Linux Secret Service)
+                try {
+                    KeyringManager.setAntigravityCredentials(accessToken, refreshToken, email, expiry);
+                } catch (e) {
+                    console.error('Failed to sync OS Keyring', e);
                 }
 
                 // 写回磁盘

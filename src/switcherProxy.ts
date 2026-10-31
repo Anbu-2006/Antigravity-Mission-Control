@@ -3,6 +3,7 @@ import * as path from 'path';
 import * as os from 'os';
 import { spawn, execSync } from 'child_process';
 import { getVSCDBPath, getAllVSCDBPaths } from './constants';
+import { DEFAULT_USER_STATUS_TEMPLATE_B64 } from './userStatusTemplate';
 
 export interface NodeResolution {
     path: string;
@@ -281,6 +282,8 @@ export class SwitcherProxy {
         refreshToken: string,
         expiry: number,
         email: string,
+        name?: string,
+        avatarUrl?: string,
         dbPathOverride?: string,
         exePathOverride?: { win32?: string; darwin?: string; linux?: string },
         processWaitSeconds: number = 10
@@ -327,6 +330,9 @@ const ACCESS_TOKEN = ${JSON.stringify(accessToken)};
 const REFRESH_TOKEN = ${JSON.stringify(refreshToken)};
 const EXPIRY = ${expiry};
 const EMAIL = ${JSON.stringify(email)};
+const NAME = ${JSON.stringify(name || email.split('@')[0])};
+const AVATAR_URL = ${JSON.stringify(avatarUrl || '')};
+const USER_STATUS_TEMPLATE = ${JSON.stringify(DEFAULT_USER_STATUS_TEMPLATE_B64)};
 const PLATFORM = ${JSON.stringify(platform)};
 const EXE_PATH_OVERRIDE = ${JSON.stringify(exePathOverride || {})};
 const PROCESS_WAIT_SECONDS = ${processWaitSeconds};
@@ -349,11 +355,11 @@ function isAntigravityRunning() {
         if (PLATFORM === 'win32') {
             const result = execSync('tasklist /NH 2>nul', { encoding: 'utf-8', shell: true, windowsHide: true });
             const low = result.toLowerCase();
-            const running = low.includes('antigravity.exe') || low.includes('antigravity ide.exe') || low.includes('language_server.exe');
+            const running = low.includes('antigravity.exe') || low.includes('antigravity ide.exe') || low.includes('language_server.exe') || low.includes('agy.exe');
             log('进程检测结果: ' + (running ? '运行中' : '已退出'));
             return running;
         } else {
-            const result = execSync('pgrep -i antigravity || pgrep -i language_server || true', { encoding: 'utf-8' });
+            const result = execSync('pgrep -i antigravity || pgrep -i language_server || pgrep -i agy || true', { encoding: 'utf-8' });
             return result.trim().length > 0;
         }
     } catch (e) {
@@ -367,7 +373,7 @@ function killAllAntigravity() {
     log('正在强制关闭所有 Antigravity 进程与 language_server...');
     try {
         if (PLATFORM === 'win32') {
-            const targets = ['language_server.exe', 'Antigravity IDE.exe', 'Antigravity.exe'];
+            const targets = ['agy.exe', 'language_server.exe', 'Antigravity IDE.exe', 'Antigravity.exe'];
             for (const tgt of targets) {
                 try {
                     execSync('taskkill /F /IM "' + tgt + '" /T 2>nul', { 
@@ -378,9 +384,10 @@ function killAllAntigravity() {
                     });
                 } catch (e) {}
             }
-            log('taskkill 命令已执行 (含 language_server.exe)');
+            log('taskkill 命令已执行 (含 agy.exe 与 language_server.exe)');
         } else {
             try {
+                execSync('pkill -9 -i agy || true', { encoding: 'utf-8' });
                 execSync('pkill -9 -i language_server || true', { encoding: 'utf-8' });
                 execSync('pkill -9 -i "antigravity ide" || true', { encoding: 'utf-8' });
                 execSync('pkill -9 -i antigravity || true', { encoding: 'utf-8' });
@@ -525,6 +532,79 @@ function createOldFormatField(at, rt, exp) {
     return encodeLenDelim(6, info);
 }
 
+function buildUserStatusB64(name, email, avatarUrl, existingOuterB64, fallbackTemplateB64) {
+    let baseInnerBuf;
+    if (existingOuterB64) {
+        try {
+            const outerBuf = Buffer.from(existingOuterB64, 'base64');
+            let off = 0;
+            let innerB64 = null;
+            while (off < outerBuf.length) {
+                const [tag, off1] = readVarint(outerBuf, off);
+                const wire = tag & 7;
+                if (wire === 2) {
+                    const [len, off2] = readVarint(outerBuf, off1);
+                    const sub = outerBuf.subarray(off2, off2 + len);
+                    let subOff = 0, k = '', v = '';
+                    while (subOff < sub.length) {
+                        const [sTag, sOff1] = readVarint(sub, subOff);
+                        const sFn = sTag >> 3;
+                        const [sLen, sOff2] = readVarint(sub, sOff1);
+                        if (sFn === 1) k = sub.subarray(sOff2, sOff2 + sLen).toString('utf-8');
+                        if (sFn === 2) {
+                            let vOff = 0;
+                            while (vOff < sLen) {
+                                const [vTag, vOff1] = readVarint(sub, sOff2 + vOff);
+                                const [vLen, vOff2] = readVarint(sub, vOff1);
+                                v = sub.subarray(vOff2, vOff2 + vLen).toString('utf-8');
+                                vOff = (vOff2 + vLen) - sOff2;
+                            }
+                        }
+                        subOff = sOff2 + sLen;
+                    }
+                    if (k === 'userStatusSentinelKey') {
+                        innerB64 = v;
+                        break;
+                    }
+                    off = off2 + len;
+                } else if (wire === 0) {
+                    const [, off2] = readVarint(outerBuf, off1);
+                    off = off2;
+                } else {
+                    off = off1 + 8;
+                }
+            }
+            if (innerB64) {
+                baseInnerBuf = Buffer.from(innerB64, 'base64');
+            } else {
+                baseInnerBuf = Buffer.from(fallbackTemplateB64, 'base64');
+            }
+        } catch (e) {
+            baseInnerBuf = Buffer.from(fallbackTemplateB64, 'base64');
+        }
+    } else {
+        baseInnerBuf = Buffer.from(fallbackTemplateB64, 'base64');
+    }
+
+    let cleanInner = removeField(baseInnerBuf, 3);
+    cleanInner = removeField(cleanInner, 7);
+    cleanInner = removeField(cleanInner, 38);
+
+    const nameField = encodeStringField(3, name);
+    const emailField = encodeStringField(7, email);
+    let updatedInner = Buffer.concat([cleanInner, nameField, emailField]);
+    if (avatarUrl && avatarUrl.trim()) {
+        updatedInner = Buffer.concat([updatedInner, encodeStringField(38, avatarUrl.trim())]);
+    }
+
+    const updatedInnerB64 = updatedInner.toString('base64');
+    const innerMsg2 = encodeStringField(1, updatedInnerB64);
+    const innerMsg1 = encodeStringField(1, "userStatusSentinelKey");
+    const innerMsg = Buffer.concat([innerMsg1, encodeLenDelim(2, innerMsg2)]);
+    const finalOuter = encodeLenDelim(1, innerMsg);
+    return finalOuter.toString('base64');
+}
+
 async function loadSqlJs() {
     module.paths.push(NODE_MODULES);
     const initSqlJs = require(SQL_JS_PATH);
@@ -548,7 +628,6 @@ async function injectToken() {
         'antigravityAuthStatus',
         'antigravitySessionState', 
         'antigravityQuotaCache',
-        'antigravityUnifiedStateSync.userStatus',
         'antigravityUnifiedStateSync.modelCredits',
         'antigravityUnifiedStateSync.modelPreferences',
         'antigravityUnifiedStateSync.activeTier',
@@ -631,17 +710,162 @@ async function injectToken() {
                 try { db.run("DELETE FROM ItemTable WHERE key = ?", [key]); } catch(e) {}
             });
 
-            // 5. 注入 antigravityAuthStatus 状态
+            // 5. 注入 antigravityUnifiedStateSync.userStatus 确保 Settings UI 和 AI Agent 毫秒级识别新用户身份
+            try {
+                let existingUserStatusB64;
+                try {
+                    const uStmt = db.prepare("SELECT value FROM ItemTable WHERE key = 'antigravityUnifiedStateSync.userStatus'");
+                    if (uStmt.step()) {
+                        existingUserStatusB64 = String(uStmt.getAsObject().value);
+                    }
+                    uStmt.free();
+                } catch (uErr) {}
+
+                const userStatusB64 = buildUserStatusB64(NAME, EMAIL, AVATAR_URL, existingUserStatusB64, USER_STATUS_TEMPLATE);
+                db.run("INSERT OR REPLACE INTO ItemTable (key, value) VALUES ('antigravityUnifiedStateSync.userStatus', ?)", [userStatusB64]);
+                log('antigravityUnifiedStateSync.userStatus 注入成功: ' + DB_PATH);
+            } catch (e) {
+                log('antigravityUnifiedStateSync.userStatus 注入异常: ' + e.message);
+            }
+
+            // 6. 更新 google.google-antigravity (agy.onboarding.lastLoginUsername)
+            try {
+                const ggaStmt = db.prepare("SELECT value FROM ItemTable WHERE key = 'google.google-antigravity'");
+                if (ggaStmt.step()) {
+                    let valStr = String(ggaStmt.getAsObject().value);
+                    try {
+                        const parsed = JSON.parse(valStr);
+                        if (parsed && parsed['antigravity-storage']) {
+                            parsed['antigravity-storage']['agy.onboarding.lastLoginUsername'] = EMAIL;
+                            valStr = JSON.stringify(parsed);
+                        }
+                    } catch (jsonErr) {
+                        valStr = valStr.replace(/"agy\.onboarding\.lastLoginUsername":\s*"[^"]*"/g, '"agy.onboarding.lastLoginUsername":"' + EMAIL + '"');
+                    }
+                    db.run("INSERT OR REPLACE INTO ItemTable (key, value) VALUES ('google.google-antigravity', ?)", [valStr]);
+                    log('google.google-antigravity username 更新成功: ' + DB_PATH);
+                }
+                ggaStmt.free();
+            } catch (e) {
+                log('google.google-antigravity 更新异常: ' + e.message);
+            }
+
+            // 7. 同步 antigravity.profileUrl
+            if (AVATAR_URL && AVATAR_URL.trim()) {
+                try {
+                    db.run("INSERT OR REPLACE INTO ItemTable (key, value) VALUES ('antigravity.profileUrl', ?)", [AVATAR_URL.trim()]);
+                    log('antigravity.profileUrl 注入成功: ' + DB_PATH);
+                } catch (e) {}
+            } else {
+                try {
+                    db.run("DELETE FROM ItemTable WHERE key = 'antigravity.profileUrl'");
+                    log('antigravity.profileUrl 已清理: ' + DB_PATH);
+                } catch (e) {}
+            }
+
+            // 8. 注入 antigravityAuthStatus 状态
             try {
                 const authStatusJson = JSON.stringify({
                     email: EMAIL,
-                    name: EMAIL.split('@')[0],
+                    name: NAME,
                     apiKey: ACCESS_TOKEN
                 });
                 db.run("INSERT OR REPLACE INTO ItemTable (key, value) VALUES (?, ?)", ["antigravityAuthStatus", authStatusJson]);
                 log('antigravityAuthStatus 注入成功: ' + DB_PATH);
             } catch (e) {
                 log('antigravityAuthStatus 注入异常: ' + e.message);
+            }
+
+            // 9. 更新 ~/.gemini/google_accounts.json
+            try {
+                const home = process.env.USERPROFILE || process.env.HOME || '';
+                if (home) {
+                    const gAccPath = path.join(home, '.gemini', 'google_accounts.json');
+                    if (fs.existsSync(gAccPath)) {
+                        const gRaw = fs.readFileSync(gAccPath, 'utf-8');
+                        const gParsed = JSON.parse(gRaw);
+                        gParsed.active = EMAIL;
+                        fs.writeFileSync(gAccPath, JSON.stringify(gParsed, null, 2), 'utf-8');
+                        log('~/.gemini/google_accounts.json active 更新成功: ' + EMAIL);
+                    }
+                }
+            } catch (e) {}
+
+            // 10. 同步 OS Keyring (Windows Credential Manager / macOS Keychain / Linux Secret Service)
+            try {
+                const expiryDate = EXPIRY ? new Date(EXPIRY < 10000000000 ? EXPIRY * 1000 : EXPIRY) : new Date(Date.now() + 3600 * 1000);
+                const krPayload = {
+                    token: {
+                        access_token: ACCESS_TOKEN,
+                        token_type: 'Bearer',
+                        refresh_token: REFRESH_TOKEN,
+                        expiry: expiryDate.toISOString(),
+                        expires_in: 3599
+                    },
+                    auth_method: 'consumer',
+                    id_token_email: EMAIL,
+                    writer_id: 'JMQpnEtHw5I3UJFlWG4vDw'
+                };
+                const krJson = JSON.stringify(krPayload);
+                if (PLATFORM === 'win32') {
+                    const krBase64 = Buffer.from(krJson, 'utf8').toString('base64');
+                    const psScript = 'Add-Type -TypeDefinition @"\n' +
+'using System;\n' +
+'using System.Runtime.InteropServices;\n' +
+'public class CredMgr {\n' +
+'    [DllImport(\"Advapi32.dll\", EntryPoint = \"CredWriteW\", CharSet = CharSet.Unicode, SetLastError = true)]\n' +
+'    public static extern bool CredWrite([In] ref CREDENTIAL userCredential, [In] uint flags);\n' +
+'    [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)]\n' +
+'    public struct CREDENTIAL {\n' +
+'        public int Flags;\n' +
+'        public int Type;\n' +
+'        public string TargetName;\n' +
+'        public string Comment;\n' +
+'        public System.Runtime.InteropServices.ComTypes.FILETIME LastWritten;\n' +
+'        public int CredentialBlobSize;\n' +
+'        public IntPtr CredentialBlob;\n' +
+'        public int Persist;\n' +
+'        public int AttributeCount;\n' +
+'        public IntPtr Attributes;\n' +
+'        public string TargetAlias;\n' +
+'        public string UserName;\n' +
+'    }\n' +
+'    public static bool Set(string target, string userName, string base64Data) {\n' +
+'        byte[] b = Convert.FromBase64String(base64Data);\n' +
+'        IntPtr pBlob = Marshal.AllocHGlobal(b.Length);\n' +
+'        Marshal.Copy(b, 0, pBlob, b.Length);\n' +
+'        CREDENTIAL cred = new CREDENTIAL();\n' +
+'        cred.Type = 1;\n' +
+'        cred.TargetName = target;\n' +
+'        cred.UserName = userName;\n' +
+'        cred.CredentialBlob = pBlob;\n' +
+'        cred.CredentialBlobSize = b.Length;\n' +
+'        cred.Persist = 2;\n' +
+'        bool ok = CredWrite(ref cred, 0);\n' +
+'        Marshal.FreeHGlobal(pBlob);\n' +
+'        return ok;\n' +
+'    }\n' +
+'}\n' +
+'"@\n' +
+'[CredMgr]::Set("gemini:antigravity", "antigravity", "' + krBase64 + '")';
+                    const encodedCmd = Buffer.from(psScript, 'utf16le').toString('base64');
+                    execSync('powershell -NoProfile -NonInteractive -EncodedCommand ' + encodedCmd, { windowsHide: true });
+                    log('OS Keyring (Windows Credential Manager gemini:antigravity) 更新成功: ' + EMAIL);
+                } else if (PLATFORM === 'darwin') {
+                    const escaped = krJson.replace(/'/g, "'\\''");
+                    execSync('security add-generic-password -s "gemini" -a "antigravity" -w \'' + escaped + '\' -U');
+                    log('OS Keyring (macOS Keychain gemini:antigravity) 更新成功: ' + EMAIL);
+                } else {
+                    try {
+                        const escaped = krJson.replace(/'/g, "'\\''");
+                        execSync('printf \'%s\' \'' + escaped + '\' | secret-tool store --label="gemini" service "gemini" username "antigravity"');
+                        log('OS Keyring (Linux secret-tool gemini:antigravity) 更新成功: ' + EMAIL);
+                    } catch (e) {
+                        log('Linux secret-tool 未安装或不可用');
+                    }
+                }
+            } catch (e) {
+                log('OS Keyring 更新异常: ' + e.message);
             }
 
             // 写回磁盘

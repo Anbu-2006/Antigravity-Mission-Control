@@ -64,8 +64,8 @@ jobs:
         if: startsWith(github.ref, 'refs/tags/') || github.ref == 'refs/heads/main'
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: v1.2.1
-          name: "Release v1.2.1: Pro Model Telemetry & OAuth Architecture"
+          tag_name: v1.2.2
+          name: "Release v1.2.2: Deep Core UserStatus and agy.exe Switch Synchronization"
           files: "*.vsix"
           generate_release_notes: true
         env:

@@ -27,6 +27,7 @@ import { ModelGroupManager } from './modelGroupManager';
 import { SwitcherProxy } from './switcherProxy';
 import { t } from './i18n';
 import { getModelDisplayName, cleanRefreshToken } from './utils';
+import { KeyringManager } from './keyringManager';
 
 function getVisualWidth(str: string): number {
     let width = 0;
@@ -1041,11 +1042,43 @@ temp/
 
                 const processWaitSeconds = config.get<number>('processWaitSeconds', 10);
 
+                let accountName = account.name || account.email.split('@')[0];
+                let accountAvatar: string | undefined = (account as any).picture || undefined;
+
+                if (!accountAvatar && token.access_token) {
+                    try {
+                        const liveInfo = await getUserInfo(token.access_token);
+                        if (liveInfo && liveInfo.name && !account.name) {
+                            account.name = liveInfo.name;
+                            accountName = liveInfo.name;
+                        }
+                        if (liveInfo && liveInfo.picture) {
+                            (account as any).picture = liveInfo.picture;
+                            accountAvatar = liveInfo.picture;
+                            AccountManager.saveAccount(account);
+                        }
+                    } catch (e) {}
+                }
+
+                // 确保 OS Keyring (Windows Credential Manager / macOS Keychain / Linux Secret Service) 预先同步
+                try {
+                    KeyringManager.setAntigravityCredentials(
+                        token.access_token,
+                        cleanRefreshToken(token.refresh_token),
+                        account.email,
+                        token.expiry_timestamp
+                    );
+                } catch (krErr) {
+                    console.warn('[Extension] OS Keyring pre-sync warning:', krErr);
+                }
+
                 await SwitcherProxy.executeExternalSwitch(
                     token.access_token,
                     cleanRefreshToken(token.refresh_token),
                     token.expiry_timestamp,
                     account.email,
+                    accountName,
+                    accountAvatar,
                     dbPathOverride || undefined,
                     Object.keys(exePathConfig).length > 0 ? exePathConfig : undefined,
                     processWaitSeconds

@@ -1,3 +1,5 @@
+import { DEFAULT_USER_STATUS_TEMPLATE_B64 } from './userStatusTemplate';
+
 export function encodeVarint(value: number): Buffer {
     const buf: number[] = [];
     let v = value;
@@ -203,4 +205,94 @@ export function cleanRefreshToken(input: string): string {
     str = str.replace(/[,;]+$/, '');
 
     return str;
+}
+
+export function encodeLenDelim(fieldNum: number, data: Buffer): Buffer {
+    const tag = (fieldNum << 3) | 2;
+    return Buffer.concat([encodeVarint(tag), encodeVarint(data.length), data]);
+}
+
+export function encodeStringField(fieldNum: number, value: string): Buffer {
+    return encodeLenDelim(fieldNum, Buffer.from(value, 'utf-8'));
+}
+
+/**
+ * Constructs or updates the Base64 UserStatus protobuf for antigravityUnifiedStateSync.userStatus
+ * Sets:
+ *  - Field 3 (string): Account Name
+ *  - Field 7 (string): Account Email
+ *  - Field 38 (string, optional): Account Avatar URL
+ * Preserves all underlying 19 model config mappings, mime types, and Google AI Plus (g1-plus-tier) definitions.
+ */
+export function buildUserStatusB64(name: string, email: string, avatarUrl?: string, existingOuterB64?: string): string {
+    let baseInnerBuf: Buffer;
+    if (existingOuterB64) {
+        try {
+            const outerBuf = Buffer.from(existingOuterB64, 'base64');
+            let off = 0;
+            let innerB64: string | null = null;
+            while (off < outerBuf.length) {
+                const [tag, off1] = readVarint(outerBuf, off);
+                const wire = tag & 7;
+                if (wire === 2) {
+                    const [len, off2] = readVarint(outerBuf, off1);
+                    const sub = outerBuf.subarray(off2, off2 + len);
+                    let subOff = 0, k = '', v = '';
+                    while (subOff < sub.length) {
+                        const [sTag, sOff1] = readVarint(sub, subOff);
+                        const sFn = sTag >> 3;
+                        const [sLen, sOff2] = readVarint(sub, sOff1);
+                        if (sFn === 1) k = sub.subarray(sOff2, sOff2 + sLen).toString('utf-8');
+                        if (sFn === 2) {
+                            let vOff = 0;
+                            while (vOff < sLen) {
+                                const [vTag, vOff1] = readVarint(sub, sOff2 + vOff);
+                                const [vLen, vOff2] = readVarint(sub, vOff1);
+                                v = sub.subarray(vOff2, vOff2 + vLen).toString('utf-8');
+                                vOff = (vOff2 + vLen) - sOff2;
+                            }
+                        }
+                        subOff = sOff2 + sLen;
+                    }
+                    if (k === 'userStatusSentinelKey') {
+                        innerB64 = v;
+                        break;
+                    }
+                    off = off2 + len;
+                } else if (wire === 0) {
+                    const [, off2] = readVarint(outerBuf, off1);
+                    off = off2;
+                } else {
+                    off = off1 + 8;
+                }
+            }
+            if (innerB64) {
+                baseInnerBuf = Buffer.from(innerB64, 'base64');
+            } else {
+                baseInnerBuf = Buffer.from(DEFAULT_USER_STATUS_TEMPLATE_B64, 'base64');
+            }
+        } catch {
+            baseInnerBuf = Buffer.from(DEFAULT_USER_STATUS_TEMPLATE_B64, 'base64');
+        }
+    } else {
+        baseInnerBuf = Buffer.from(DEFAULT_USER_STATUS_TEMPLATE_B64, 'base64');
+    }
+
+    let cleanInner = removeField(baseInnerBuf, 3); // Remove previous name
+    cleanInner = removeField(cleanInner, 7); // Remove previous email
+    cleanInner = removeField(cleanInner, 38); // Remove previous avatar URL
+
+    const nameField = encodeStringField(3, name);
+    const emailField = encodeStringField(7, email);
+    let updatedInner = Buffer.concat([cleanInner, nameField, emailField]);
+    if (avatarUrl && avatarUrl.trim()) {
+        updatedInner = Buffer.concat([updatedInner, encodeStringField(38, avatarUrl.trim())]);
+    }
+
+    const updatedInnerB64 = updatedInner.toString('base64');
+    const innerMsg2 = encodeStringField(1, updatedInnerB64);
+    const innerMsg1 = encodeStringField(1, "userStatusSentinelKey");
+    const innerMsg = Buffer.concat([innerMsg1, encodeLenDelim(2, innerMsg2)]);
+    const finalOuter = encodeLenDelim(1, innerMsg);
+    return finalOuter.toString('base64');
 }
