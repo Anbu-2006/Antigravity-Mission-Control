@@ -32,18 +32,23 @@ jobs:
 
       # Publish to Open VSX Registry (PAT from Environment or fallback OIDC)
       - name: Publish to Open VSX Registry
+        continue-on-error: true
         env:
           OPEN_VSX_TOKEN: ${{ secrets.OPEN_VSX_TOKEN }}
           OVSX_PAT: ${{ secrets.OVSX_PAT }}
           OPENVSX_TOKEN: ${{ secrets.OPENVSX_TOKEN }}
         run: |
+          echo "### Open VSX Publish Output" >> $GITHUB_STEP_SUMMARY
           PAT_TOKEN="${OPEN_VSX_TOKEN:-${OVSX_PAT:-$OPENVSX_TOKEN}}"
           if [ -n "$PAT_TOKEN" ]; then
             echo "Publishing to Open VSX with Personal Access Token..."
-            npx ovsx publish *.vsix --pat "$PAT_TOKEN"
+            npx ovsx publish *.vsix --pat "$PAT_TOKEN" --skip-duplicate 2>&1 | tee -a $GITHUB_STEP_SUMMARY || {
+              echo "PAT publish failed. Retrying with Trusted Publishing..." | tee -a $GITHUB_STEP_SUMMARY
+              npx ovsx publish *.vsix --trusted-publishing 2>&1 | tee -a $GITHUB_STEP_SUMMARY || true
+            }
           else
             echo "No PAT token found. Publishing to Open VSX via Trusted Publishing (OIDC)..."
-            npx ovsx publish *.vsix --trusted-publishing
+            npx ovsx publish *.vsix --trusted-publishing 2>&1 | tee -a $GITHUB_STEP_SUMMARY || true
           fi
 
       # Publish to VS Code Marketplace (official) - only if VSCE_PAT is set
