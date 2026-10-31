@@ -1131,7 +1131,8 @@ temp/
                     AccountManager.saveAccount(account);
                 }
                 AccountManager.clearQuotaCache(oldAccessToken);
-                await AccountManager.fetchQuotaCached(account.token.access_token);
+                AccountManager.clearQuotaCache(account.token.access_token);
+                await AccountManager.fetchQuotaCached(account.token.access_token, null, true);
                 accountTreeProvider.refresh();
                 DashboardProvider.refresh();
                 updateStatusBar();

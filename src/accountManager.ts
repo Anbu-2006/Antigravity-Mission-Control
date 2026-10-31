@@ -413,20 +413,33 @@ export class AccountManager {
     private static readonly _CACHE_TTL = 60 * 1000;
     private static _backoffState = new Map<string, { failures: number; nextRetryAt: number }>();
 
-    static async fetchQuotaCached(accessToken: string, projectId: string | null = null) {
+    static async fetchQuotaCached(accessToken: string, projectId: string | null = null, forceRefresh: boolean = false) {
         const cacheKey = accessToken.substring(0, 32);
+
+        if (forceRefresh) {
+            this._quotaCache.delete(cacheKey);
+            this._backoffState.delete(cacheKey);
+        }
+
         const cached = this._quotaCache.get(cacheKey);
 
-        if (cached && (Date.now() - cached.timestamp) < this._CACHE_TTL) {
+        if (!forceRefresh && cached && (Date.now() - cached.timestamp) < this._CACHE_TTL) {
             return cached.data;
         }
 
         const backoff = this._backoffState.get(cacheKey);
-        if (backoff && Date.now() < backoff.nextRetryAt) {
+        if (!forceRefresh && backoff && Date.now() < backoff.nextRetryAt) {
             if (cached) {
                 return cached.data;
             }
-            return { is_error: true, error_message: 'Rate-limited (backoff active)', models: [], tier: null };
+            const retryInSec = Math.max(1, Math.ceil((backoff.nextRetryAt - Date.now()) / 1000));
+            return {
+                is_error: true,
+                error_status: 429,
+                error_message: `Rate-limited (cooling down, retry in ${retryInSec}s)`,
+                models: [],
+                tier: null
+            };
         }
 
         try {
@@ -436,7 +449,7 @@ export class AccountManager {
                 this._backoffState.delete(cacheKey);
             } else {
                 const currentFailures = (backoff?.failures || 0) + 1;
-                const baseDelay = Math.min(60000 * Math.pow(2, currentFailures - 1), 480000);
+                const baseDelay = Math.min(10000 * Math.pow(2, currentFailures - 1), 60000);
                 const jitter = baseDelay * (0.85 + Math.random() * 0.3);
                 this._backoffState.set(cacheKey, {
                     failures: currentFailures,
@@ -447,7 +460,7 @@ export class AccountManager {
             return data;
         } catch (e) {
             const currentFailures = (backoff?.failures || 0) + 1;
-            const baseDelay = Math.min(60000 * Math.pow(2, currentFailures - 1), 480000);
+            const baseDelay = Math.min(10000 * Math.pow(2, currentFailures - 1), 60000);
             const jitter = baseDelay * (0.85 + Math.random() * 0.3);
             this._backoffState.set(cacheKey, {
                 failures: currentFailures,
@@ -467,8 +480,10 @@ export class AccountManager {
         if (accessToken) {
             const cacheKey = accessToken.substring(0, 32);
             this._quotaCache.delete(cacheKey);
+            this._backoffState.delete(cacheKey);
         } else {
             this._quotaCache.clear();
+            this._backoffState.clear();
         }
     }
 

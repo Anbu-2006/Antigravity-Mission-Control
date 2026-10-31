@@ -346,10 +346,12 @@ function renderFocusNode() {
         });
         b += '</div>';
     } else if (isErr) {
+        const statusCode = (acc.quota && acc.quota.error_status) ? acc.quota.error_status : (isRl ? 429 : 500);
         b += \`<div style="text-align:center;padding:20px;color:var(--red);font-family:monospace">
-            <div style="font-size:14px;margin-bottom:5px">[ HTTP \${isRl ? 429 : 500} ]</div>
-            <div>\${isRl ? 'RATE LIMIT DETECTED' : 'TELEMETRY FAILURE'}</div>
+            <div style="font-size:14px;margin-bottom:5px">[ HTTP \${statusCode} ]</div>
+            <div>\${statusCode === 429 ? 'RATE LIMIT DETECTED' : 'TELEMETRY FAILURE'}</div>
             <div style="font-size:10px;margin-top:5px;color:var(--text-muted)">\${acc.quota.error_message || ''}</div>
+            <button class="action-btn ghost" style="margin-top:12px;font-size:10px;padding:4px 12px" onclick="doRefresh(\'\${acc.id}\')">REFRESH TELEMETRY</button>
         </div>\`;
     } else {
         b += \`<div style="text-align:center;padding:20px;color:var(--text-muted);font-family:monospace">AWAITING TELEMETRY DATA...</div>\`;
@@ -388,6 +390,7 @@ function renderFleetGrid() {
 function selectNode(id) {
     activeAccountId = id;
     vscode.setState({ activeAccountId });
+    vscode.postMessage({ command: 'selectAccount', accountId: id });
     renderAll();
 }
 

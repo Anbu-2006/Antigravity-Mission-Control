@@ -95,6 +95,17 @@ export class DashboardProvider {
                             await vscode.commands.executeCommand('antigravity-mission-hub.refreshAccount', message.accountId, message.silent);
                             this._update();
                             return;
+                        case 'selectAccount':
+                            if (message.accountId) {
+                                try {
+                                    const acc = AccountManager.loadAccount(message.accountId);
+                                    if (acc.token) {
+                                        await AccountManager.fetchQuotaCached(acc.token.access_token);
+                                        this._postState();
+                                    }
+                                } catch (e) {}
+                            }
+                            return;
                         case 'refreshAll':
                             await vscode.commands.executeCommand('antigravity-mission-hub.refreshAllAccounts');
                             this._update();

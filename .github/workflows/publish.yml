@@ -69,8 +69,8 @@ jobs:
         if: startsWith(github.ref, 'refs/tags/') || github.ref == 'refs/heads/main'
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: v1.2.3
-          name: "Release v1.2.3: Production Auto-Restart & Live Account Keyring Synchronization"
+          tag_name: v1.2.1
+          name: "Release v1.2.1: Production Auto-Restart & Live Account Keyring Synchronization"
           body_path: ovsx.log
           files: "*.vsix"
           overwrite_files: true
