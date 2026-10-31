@@ -1997,8 +1997,9 @@ async function performOAuth(): Promise<any> {
 
             if (pathname === '/favicon.ico') {
                 res.writeHead(404);
+                res.end();
+                return;
             }
-            return;
 
             if (pathname === '/oauth-callback') {
                 if (queryObject.code) {

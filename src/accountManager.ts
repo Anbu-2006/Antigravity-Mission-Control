@@ -308,60 +308,58 @@ export class AccountManager {
             }
         }
 
-        finalProjectId = finalProjectId || "bamboo-precept-lgxtn";
+        finalProjectId = finalProjectId || "aicode-consumers";
 
         let finalResponse: any = null;
         let lastError: any = null;
 
+        const candidateProjects = [finalProjectId, "aicode-consumers", ""];
+
         for (const ep of QUOTA_API_ENDPOINTS) {
-            try {
-                const response = await axios.post(ep,
-                    { project: finalProjectId },
-                    {
-                        headers: { 
-                            "Authorization": `Bearer ${accessToken}`, 
-                            "User-Agent": "Antigravity/4.1.29 (Windows NT 10.0; Win64; x64) Chrome/132.0.6834.160 Electron/39.2.3",
-                            "Accept": "application/json",
-                            "Content-Type": "application/json"
-                        },
-                        timeout: 12000
+            for (const proj of candidateProjects) {
+                try {
+                    const response = await axios.post(ep,
+                        proj ? { project: proj } : {},
+                        {
+                            headers: { 
+                                "Authorization": `Bearer ${accessToken}`, 
+                                "User-Agent": "Antigravity/4.1.29 (Windows NT 10.0; Win64; x64) Chrome/132.0.6834.160 Electron/39.2.3",
+                                "Accept": "application/json",
+                                "Content-Type": "application/json"
+                            },
+                            timeout: 12000
+                        }
+                    );
+                    
+                    if (response.status === 200 && response.data?.models) {
+                        finalResponse = response;
+                        break;
                     }
-                );
-                
-                if (response.status === 403) {
-                    return { is_forbidden: true, models: [], tier };
+                } catch (quotaErr: any) {
+                    const status = quotaErr.response?.status;
+                    const statusText = quotaErr.response?.statusText || '';
+                    const errMsg = quotaErr.message || 'Unknown error';
+
+                    if (status === 401) {
+                        throw quotaErr;
+                    }
+
+                    lastError = {
+                        is_error: true,
+                        error_status: status || 0,
+                        error_message: status ? `HTTP ${status} ${statusText}` : errMsg,
+                        models: [],
+                        tier
+                    };
+
+                    if (status === 429 || (status && status >= 500)) {
+                        console.warn(`[Cockpit] Quota API 429/5xx at ${ep}, falling back...`);
+                        continue;
+                    }
                 }
-                
-                finalResponse = response;
+            }
+            if (finalResponse) {
                 break;
-            } catch (quotaErr: any) {
-                const status = quotaErr.response?.status;
-                const statusText = quotaErr.response?.statusText || '';
-                const errMsg = quotaErr.message || 'Unknown error';
-
-                if (status === 403) {
-                    return { is_forbidden: true, models: [], tier };
-                }
-
-                if (status === 401) {
-                    throw quotaErr;
-                }
-
-                lastError = {
-                    is_error: true,
-                    error_status: status || 0,
-                    error_message: status ? `HTTP ${status} ${statusText}` : errMsg,
-                    models: [],
-                    tier
-                };
-
-                if (status === 429 || (status && status >= 500)) {
-                    console.warn(`[Cockpit] Quota API 429/5xx at ${ep}, falling back to next endpoint...`);
-                    continue;
-                }
-                
-                console.warn(`[Cockpit] Quota API error at ${ep}: HTTP ${status || 'N/A'} - ${errMsg}`);
-                return lastError;
             }
         }
 

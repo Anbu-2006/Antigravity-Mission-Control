@@ -63,8 +63,8 @@ jobs:
         if: startsWith(github.ref, 'refs/tags/') || github.ref == 'refs/heads/main'
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: v1.2.0
-          name: "Release v1.2.0: Deep Antigravity IDE 2.6.0 Sync & Pro Model Architecture"
+          tag_name: v1.2.1
+          name: "Release v1.2.1: Pro Model Telemetry & OAuth Architecture"
           files: "*.vsix"
           generate_release_notes: true
         env:

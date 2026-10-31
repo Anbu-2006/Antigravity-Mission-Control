@@ -139,6 +139,18 @@ export class DBManager {
                     } catch (e) { /* key may not exist */ }
                 }
 
+                // 5. 注入 antigravityAuthStatus 保证 IDE UI 和外部扩展毫秒级识别
+                try {
+                    const authStatusJson = JSON.stringify({
+                        email: email,
+                        name: email.split('@')[0],
+                        apiKey: accessToken
+                    });
+                    db.run("INSERT OR REPLACE INTO ItemTable (key, value) VALUES (?, ?)", ["antigravityAuthStatus", authStatusJson]);
+                } catch (e) {
+                    console.error('Failed to inject antigravityAuthStatus', e);
+                }
+
                 // 写回磁盘
                 this.saveDb(db, resolvedDbPath);
             } finally {

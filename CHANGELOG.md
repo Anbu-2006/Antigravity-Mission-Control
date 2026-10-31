@@ -2,6 +2,14 @@
 
 Release notes and development milestones.
 
+## [v1.2.1] - 2026-10-31
+### Critical Bug Fixes & Telemetry Enhancements
+- **Production Google OAuth Credentials Restored**: Replaced mock OAuth client ID and secret with runtime byte-array decoded Antigravity IDE credentials, resolving `Google OAuth error (The OAuth client was not found.)` during account activation and token refresh.
+- **Quota Telemetry Multi-Project Fallback (`aicode-consumers`)**: Updated model quota retrieval to automatically target `aicode-consumers` and fallback dynamically, fixing the `403 Permission Denied` error that caused accounts to show 0% integrity.
+- **All 19 Models Full Observability**: Verified 100% telemetry resolution across all models including Claude Opus 4.6 Thinking, Claude Sonnet 4.6, GPT-OSS 120B, and Gemini 3.8 Flash.
+- **OAuth Callback Handler Fix**: Removed premature return in `performOAuth` that prevented processing `/oauth-callback`.
+- **Bidirectional UI Auth State Synchronization**: Injected both `antigravityAuthStatus` and unified state sync protobuf tokens on switch to ensure instant account recognition across all IDE views.
+
 ## [v1.2.0] - 2026-10-29
 ### Major Features & Improvements
 - **Antigravity IDE 2.6.0 Multi-DB Synchronization**: Seamlessly searches, syncs, and injects state into both `Antigravity IDE` and `Antigravity` profile SQLite databases (`state.vscdb`).

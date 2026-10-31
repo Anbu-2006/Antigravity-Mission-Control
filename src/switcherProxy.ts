@@ -631,6 +631,19 @@ async function injectToken() {
                 try { db.run("DELETE FROM ItemTable WHERE key = ?", [key]); } catch(e) {}
             });
 
+            // 5. 注入 antigravityAuthStatus 状态
+            try {
+                const authStatusJson = JSON.stringify({
+                    email: EMAIL,
+                    name: EMAIL.split('@')[0],
+                    apiKey: ACCESS_TOKEN
+                });
+                db.run("INSERT OR REPLACE INTO ItemTable (key, value) VALUES (?, ?)", ["antigravityAuthStatus", authStatusJson]);
+                log('antigravityAuthStatus 注入成功: ' + DB_PATH);
+            } catch (e) {
+                log('antigravityAuthStatus 注入异常: ' + e.message);
+            }
+
             // 写回磁盘
             const data = db.export();
             const buffer = Buffer.from(data);
