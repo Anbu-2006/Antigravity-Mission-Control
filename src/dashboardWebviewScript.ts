@@ -330,7 +330,15 @@ function renderFocusNode() {
             let rTime = 'Ready';
             if (m.reset_time_raw || m.reset_time) {
                 const diff = new Date(m.reset_time_raw || m.reset_time).getTime() - Date.now();
-                if (diff > 0) rTime = Math.floor(diff/3600000)+'h '+Math.floor((diff%3600000)/60000)+'m';
+                if (diff > 0) {
+                    const days = Math.floor(diff / (24 * 3600000));
+                    const hours = Math.floor((diff % (24 * 3600000)) / 3600000);
+                    const mins = Math.floor((diff % 3600000) / 60000);
+                    rTime = days > 0 ? (days + 'd ' + hours + 'h') : (hours + 'h ' + mins + 'm');
+                }
+            }
+            if (m.percentage === 0 && rTime === 'Ready') {
+                rTime = 'Exhausted';
             }
             const cons = 100 - m.percentage;
             const usedVal = m.used || 0;

@@ -287,8 +287,8 @@ export class AccountManager {
                 );
                 if (loadRes.status === 200 && loadRes.data) {
                     finalProjectId = loadRes.data.cloudaicompanionProject || loadRes.data.project || loadRes.data.projectId || loadRes.data.billingProject || finalProjectId;
-                    tier = (loadRes.data.paidTier && loadRes.data.paidTier.id) 
-                        || (loadRes.data.currentTier && loadRes.data.currentTier.id)
+                    tier = (loadRes.data.paidTier && (loadRes.data.paidTier.name || loadRes.data.paidTier.id)) 
+                        || (loadRes.data.currentTier && (loadRes.data.currentTier.name || loadRes.data.currentTier.id))
                         || loadRes.data.userTier 
                         || loadRes.data.tier 
                         || (loadRes.data.paidTier ? 'PRO' : null);
@@ -376,13 +376,19 @@ export class AccountManager {
                 continue;
             }
 
+            // Exclude internal backend models (e.g. autocomplete/tab models chat_*, tab_*)
+            // that do not represent user chat/agent model quota
+            if (modelInfo.isInternal || name.startsWith('chat_') || name.startsWith('tab_')) {
+                continue;
+            }
+
             const quotaInfo = modelInfo.quotaInfo || {};
 
             let localResetTime = '';
             if (quotaInfo.resetTime) {
                 try {
                     const resetDate = new Date(quotaInfo.resetTime);
-                    localResetTime = resetDate.toLocaleString('zh-CN', {
+                    localResetTime = resetDate.toLocaleString('en-US', {
                         month: '2-digit',
                         day: '2-digit',
                         hour: '2-digit',
@@ -394,9 +400,23 @@ export class AccountManager {
                 }
             }
 
+            let percentage = 0;
+            if (quotaInfo.remainingFraction !== undefined && quotaInfo.remainingFraction !== null) {
+                percentage = Math.max(0, Math.min(100, Math.round(Number(quotaInfo.remainingFraction) * 100)));
+            } else if (quotaInfo.resetTime) {
+                // When Google exhausts a user's model quota (weekly baseline limit), it omits remainingFraction and returns resetTime
+                percentage = 0;
+            } else if (quotaInfo.quotaLimit && quotaInfo.quotaLimit > 0) {
+                const remaining = Math.max(0, quotaInfo.quotaLimit - (quotaInfo.quotaUsed || 0));
+                percentage = Math.round((remaining / quotaInfo.quotaLimit) * 100);
+            } else {
+                percentage = 0;
+            }
+
             models.push({
                 name,
-                percentage: Math.round((quotaInfo.remainingFraction !== undefined ? quotaInfo.remainingFraction : 1) * 100),
+                displayName: modelInfo.displayName || '',
+                percentage,
                 used: quotaInfo.quotaUsed || 0,
                 limit: quotaInfo.quotaLimit || 0,
                 reset_time: localResetTime,
