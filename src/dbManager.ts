@@ -499,6 +499,74 @@ export class DBManager {
     /**
      * Reads the active Antigravity IDE authentication status strictly from state.vscdb.
      */
+    /**
+     * Parses the active email, name, and avatar from an antigravityUnifiedStateSync.userStatus Topic base64 string.
+     */
+    static parseUserStatusFromTopicB64(topicB64: string): { name?: string; email?: string; avatarUrl?: string } | null {
+        try {
+            const outerBuf = Buffer.from(topicB64, 'base64');
+            const sKey = 'userStatusSentinelKey';
+            const sKeyIdx = outerBuf.indexOf(sKey);
+            if (sKeyIdx === -1) { return null; }
+
+            let off = sKeyIdx + sKey.length;
+            off++; // skip tag 2
+            while (outerBuf[off++] & 0x80) {} // skip length
+            off++; // skip tag 1
+            let strLen = 0, shift = 0;
+            while (true) {
+                const b = outerBuf[off++];
+                strLen |= (b & 0x7f) << shift;
+                if (!(b & 0x80)) { break; }
+                shift += 7;
+            }
+            const b64Str = outerBuf.subarray(off, off + strLen).toString('utf8');
+            const innerBuf = Buffer.from(b64Str, 'base64');
+
+            let iOff = 0;
+            let name = '', email = '', avatarUrl = '';
+            while (iOff < innerBuf.length) {
+                let b = innerBuf[iOff++];
+                let tag = b & 0x7f, s = 7;
+                while (b & 0x80) {
+                    b = innerBuf[iOff++];
+                    tag |= (b & 0x7f) << s;
+                    s += 7;
+                }
+                const fn = tag >> 3;
+                const wire = tag & 0x7;
+                if (wire === 2) {
+                    let len = 0, ls = 0;
+                    while (true) {
+                        const lb = innerBuf[iOff++];
+                        len |= (lb & 0x7f) << ls;
+                        if (!(lb & 0x80)) { break; }
+                        ls += 7;
+                    }
+                    const val = innerBuf.subarray(iOff, iOff + len);
+                    iOff += len;
+                    if (fn === 3) { name = val.toString('utf8'); }
+                    else if (fn === 7) { email = val.toString('utf8'); }
+                    else if (fn === 38) { avatarUrl = val.toString('utf8'); }
+                } else if (wire === 0) {
+                    while (innerBuf[iOff++] & 0x80) {}
+                } else if (wire === 1) {
+                    iOff += 8;
+                } else if (wire === 5) {
+                    iOff += 4;
+                } else {
+                    break;
+                }
+            }
+            if (email) {
+                return { name, email, avatarUrl };
+            }
+            return null;
+        } catch (e) {
+            return null;
+        }
+    }
+
     static async readAuthStatus(dbPath?: string): Promise<{
         state: 'authenticated' | 'logged_out' | 'missing';
         email?: string;
@@ -536,7 +604,27 @@ export class DBManager {
                         stmt.free();
                     } catch (e) {}
 
-                    // 2. Check google.google-antigravity (agy.onboarding.lastLoginUsername)
+                    // 2. Check antigravityUnifiedStateSync.userStatus (Primary Protobuf source of truth for Settings UI)
+                    try {
+                        const uStmt = db.prepare("SELECT value FROM ItemTable WHERE key = 'antigravityUnifiedStateSync.userStatus'");
+                        if (uStmt.step()) {
+                            const uRow = uStmt.getAsObject();
+                            if (uRow && uRow.value) {
+                                const parsedUS = DBManager.parseUserStatusFromTopicB64(String(uRow.value));
+                                if (parsedUS && parsedUS.email) {
+                                    uStmt.free();
+                                    return {
+                                        state: 'authenticated',
+                                        email: parsedUS.email,
+                                        name: parsedUS.name || parsedUS.email.split('@')[0]
+                                    };
+                                }
+                            }
+                        }
+                        uStmt.free();
+                    } catch (e) {}
+
+                    // 3. Check google.google-antigravity (agy.onboarding.lastLoginUsername)
                     try {
                         const agStmt = db.prepare("SELECT value FROM ItemTable WHERE key = ?");
                         agStmt.bind(["google.google-antigravity"]);
@@ -566,21 +654,9 @@ export class DBManager {
             }
         }
 
-        // 3. Fallback: OS Keyring
-        try {
-            const kr = KeyringManager.getAntigravityCredentials();
-            if (kr && kr.id_token_email) {
-                return {
-                    state: 'authenticated',
-                    email: kr.id_token_email,
-                    name: kr.id_token_email.split('@')[0],
-                    apiKey: kr.token ? kr.token.access_token : undefined
-                };
-            }
-        } catch (krErr) {
-            console.warn('[DBManager] Failed to read OS Keyring fallback credentials:', krErr);
-        }
-
+        // DO NOT fall back to OS Keyring here. OS Keyring is strictly for Antigravity CLI (agy).
+        // Falling back to OS Keyring here would overwrite the IDE account with the CLI account,
+        // violating independent account separation.
         return { state: 'missing' };
     }
 

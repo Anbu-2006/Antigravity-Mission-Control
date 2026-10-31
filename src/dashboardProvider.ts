@@ -105,6 +105,14 @@ export class DashboardProvider {
                                 try {
                                     const acc = AccountManager.loadAccount(message.accountId);
                                     if (acc.token) {
+                                        if (Date.now() / 1000 > acc.token.expiry_timestamp - 300 && acc.token.refresh_token) {
+                                            try {
+                                                const refreshed = await AccountManager.refreshToken(acc.token.refresh_token);
+                                                acc.token.access_token = refreshed.accessToken;
+                                                acc.token.expiry_timestamp = Math.floor(Date.now() / 1000) + refreshed.expiresIn;
+                                                AccountManager.saveAccount(acc);
+                                            } catch (reErr) {}
+                                        }
                                         await AccountManager.fetchQuotaCached(acc.token.access_token);
                                         this._postState();
                                     }
@@ -426,6 +434,14 @@ export class DashboardProvider {
                 if (fullAcc.token) {
                     if (isIdeCurrent) {
                         try {
+                            if (Date.now() / 1000 > fullAcc.token.expiry_timestamp - 300 && fullAcc.token.refresh_token) {
+                                try {
+                                    const refreshed = await AccountManager.refreshToken(fullAcc.token.refresh_token);
+                                    fullAcc.token.access_token = refreshed.accessToken;
+                                    fullAcc.token.expiry_timestamp = Math.floor(Date.now() / 1000) + refreshed.expiresIn;
+                                    AccountManager.saveAccount(fullAcc);
+                                } catch (reErr) {}
+                            }
                             quota = await AccountManager.fetchQuotaCached(fullAcc.token.access_token);
                         } catch (e: any) {
                             if (e.response && e.response.status === 401) {
