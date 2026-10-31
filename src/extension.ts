@@ -161,6 +161,13 @@ temp/
                     }
                 }
 
+                if (!verifiedLiveEmail && liveIdeEmail) {
+                    const localMatch = index.accounts.find(a => a.email.toLowerCase() === liveIdeEmail.toLowerCase());
+                    if (localMatch) {
+                        verifiedLiveEmail = localMatch.email;
+                    }
+                }
+
                 if (verifiedLiveEmail) {
                     if (index.current_account_id) {
                         try {

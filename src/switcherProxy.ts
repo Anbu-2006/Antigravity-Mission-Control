@@ -294,6 +294,7 @@ export class SwitcherProxy {
         const logPath = path.join(tempDir, `ag_switch_${timestamp}.log`);
 
         const extensionRoot = path.join(__dirname, '..');
+        const outDir = path.join(extensionRoot, 'out');
         const nodeModulesPath = path.join(extensionRoot, 'node_modules');
         const platform = os.platform();
 
@@ -325,6 +326,7 @@ const LOG_PATH = ${JSON.stringify(logPath)};
 const PRIMARY_DB_PATH = ${JSON.stringify(actualDbPath)};
 const ALL_DB_PATHS = ${JSON.stringify(allDbPaths)};
 const NODE_MODULES = ${JSON.stringify(nodeModulesPath)};
+const OUT_DIR = ${JSON.stringify(outDir)};
 const SQL_JS_PATH = path.join(NODE_MODULES, 'sql.js');
 const ACCESS_TOKEN = ${JSON.stringify(accessToken)};
 const REFRESH_TOKEN = ${JSON.stringify(refreshToken)};
@@ -793,79 +795,16 @@ async function injectToken() {
 
             // 10. 同步 OS Keyring (Windows Credential Manager / macOS Keychain / Linux Secret Service)
             try {
-                const expiryDate = EXPIRY ? new Date(EXPIRY < 10000000000 ? EXPIRY * 1000 : EXPIRY) : new Date(Date.now() + 3600 * 1000);
-                const krPayload = {
-                    token: {
-                        access_token: ACCESS_TOKEN,
-                        token_type: 'Bearer',
-                        refresh_token: REFRESH_TOKEN,
-                        expiry: expiryDate.toISOString(),
-                        expires_in: 3599
-                    },
-                    auth_method: 'consumer',
-                    id_token_email: EMAIL,
-                    writer_id: 'JMQpnEtHw5I3UJFlWG4vDw'
-                };
-                const krJson = JSON.stringify(krPayload);
-                if (PLATFORM === 'win32') {
-                    const krBase64 = Buffer.from(krJson, 'utf8').toString('base64');
-                    const psScript = 'Add-Type -TypeDefinition @"\n' +
-'using System;\n' +
-'using System.Runtime.InteropServices;\n' +
-'public class CredMgr {\n' +
-'    [DllImport(\"Advapi32.dll\", EntryPoint = \"CredWriteW\", CharSet = CharSet.Unicode, SetLastError = true)]\n' +
-'    public static extern bool CredWrite([In] ref CREDENTIAL userCredential, [In] uint flags);\n' +
-'    [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)]\n' +
-'    public struct CREDENTIAL {\n' +
-'        public int Flags;\n' +
-'        public int Type;\n' +
-'        public string TargetName;\n' +
-'        public string Comment;\n' +
-'        public System.Runtime.InteropServices.ComTypes.FILETIME LastWritten;\n' +
-'        public int CredentialBlobSize;\n' +
-'        public IntPtr CredentialBlob;\n' +
-'        public int Persist;\n' +
-'        public int AttributeCount;\n' +
-'        public IntPtr Attributes;\n' +
-'        public string TargetAlias;\n' +
-'        public string UserName;\n' +
-'    }\n' +
-'    public static bool Set(string target, string userName, string base64Data) {\n' +
-'        byte[] b = Convert.FromBase64String(base64Data);\n' +
-'        IntPtr pBlob = Marshal.AllocHGlobal(b.Length);\n' +
-'        Marshal.Copy(b, 0, pBlob, b.Length);\n' +
-'        CREDENTIAL cred = new CREDENTIAL();\n' +
-'        cred.Type = 1;\n' +
-'        cred.TargetName = target;\n' +
-'        cred.UserName = userName;\n' +
-'        cred.CredentialBlob = pBlob;\n' +
-'        cred.CredentialBlobSize = b.Length;\n' +
-'        cred.Persist = 2;\n' +
-'        bool ok = CredWrite(ref cred, 0);\n' +
-'        Marshal.FreeHGlobal(pBlob);\n' +
-'        return ok;\n' +
-'    }\n' +
-'}\n' +
-'"@\n' +
-'[CredMgr]::Set("gemini:antigravity", "antigravity", "' + krBase64 + '")';
-                    const encodedCmd = Buffer.from(psScript, 'utf16le').toString('base64');
-                    execSync('powershell -NoProfile -NonInteractive -EncodedCommand ' + encodedCmd, { windowsHide: true });
-                    log('OS Keyring (Windows Credential Manager gemini:antigravity) 更新成功: ' + EMAIL);
-                } else if (PLATFORM === 'darwin') {
-                    const escaped = krJson.replace(/'/g, "'\\''");
-                    execSync('security add-generic-password -s "gemini" -a "antigravity" -w \'' + escaped + '\' -U');
-                    log('OS Keyring (macOS Keychain gemini:antigravity) 更新成功: ' + EMAIL);
+                const keyringModulePath = path.join(OUT_DIR, 'keyringManager');
+                if (fs.existsSync(keyringModulePath + '.js') || fs.existsSync(keyringModulePath)) {
+                    const { KeyringManager } = require(keyringModulePath);
+                    KeyringManager.setAntigravityCredentials(ACCESS_TOKEN, REFRESH_TOKEN, EMAIL, EXPIRY);
+                    log('OS Keyring (Windows Credential Manager / Keychain / secret-tool) 更新成功: ' + EMAIL);
                 } else {
-                    try {
-                        const escaped = krJson.replace(/'/g, "'\\''");
-                        execSync('printf \'%s\' \'' + escaped + '\' | secret-tool store --label="gemini" service "gemini" username "antigravity"');
-                        log('OS Keyring (Linux secret-tool gemini:antigravity) 更新成功: ' + EMAIL);
-                    } catch (e) {
-                        log('Linux secret-tool 未安装或不可用');
-                    }
+                    log('KeyringManager 模块未找到: ' + keyringModulePath);
                 }
             } catch (e) {
-                log('OS Keyring 更新异常: ' + e.message);
+                log('OS Keyring 更新异常: ' + (e.message || e));
             }
 
             // 写回磁盘
@@ -944,12 +883,7 @@ function startIDE() {
             log('使用的 IDE 路径: ' + exePath);
 
             if (exePath && fs.existsSync(exePath)) {
-                if (isAntigravityRunning()) {
-                    log('方法1 跳过: 检测到 Antigravity 进程已在运行');
-                    return true;
-                }
-                
-                log('尝试方法1: spawn 直接启动 IDE');
+                log('尝试方法1: spawn 直接启动 IDE: ' + exePath);
                 const cleanEnv = { ...process.env };
                 Object.keys(cleanEnv).forEach(key => {
                     if (key.startsWith('VSCODE_') || key.startsWith('ELECTRON_')) {

@@ -32,7 +32,6 @@ export class KeyringManager {
         try {
             let expiryDate: Date;
             if (expirySecOrMs) {
-                // If in seconds (e.g. 1775628432), convert to ms; if in ms, use directly
                 const ms = expirySecOrMs < 10000000000 ? expirySecOrMs * 1000 : expirySecOrMs;
                 expiryDate = new Date(ms);
             } else {
@@ -57,6 +56,7 @@ export class KeyringManager {
             if (process.platform === 'win32') {
                 const base64Secret = Buffer.from(jsonStr, 'utf8').toString('base64');
                 const psScript = `
+$ProgressPreference = 'SilentlyContinue'
 Add-Type -TypeDefinition @"
 using System;
 using System.Runtime.InteropServices;
@@ -119,5 +119,72 @@ public class CredMgr {
             return false;
         }
     }
-}
 
+    /**
+     * Reads the active Antigravity credentials directly from the OS Keyring.
+     * This is the supreme source of truth for the active account inside Antigravity IDE.
+     */
+    static getAntigravityCredentials(): AntigravityKeyringPayload | null {
+        try {
+            if (process.platform === 'win32') {
+                const psScript = `
+$ProgressPreference = 'SilentlyContinue'
+Add-Type -TypeDefinition @"
+using System;
+using System.Runtime.InteropServices;
+using System.Text;
+public class CredReader {
+    [DllImport("Advapi32.dll", EntryPoint = "CredReadW", CharSet = CharSet.Unicode, SetLastError = true)]
+    public static extern bool CredRead(string target, int type, int reservedFlag, out IntPtr pCredential);
+    [DllImport("Advapi32.dll", EntryPoint = "CredFree", SetLastError = true)]
+    public static extern void CredFree([In] IntPtr cred);
+    [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)]
+    public struct CREDENTIAL {
+        public int Flags;
+        public int Type;
+        public string TargetName;
+        public string Comment;
+        public System.Runtime.InteropServices.ComTypes.FILETIME LastWritten;
+        public int CredentialBlobSize;
+        public IntPtr CredentialBlob;
+        public int Persist;
+        public int AttributeCount;
+        public IntPtr Attributes;
+        public string TargetAlias;
+        public string UserName;
+    }
+    public static string Read(string target) {
+        IntPtr pCred;
+        if (CredRead(target, 1, 0, out pCred)) {
+            CREDENTIAL cred = (CREDENTIAL)Marshal.PtrToStructure(pCred, typeof(CREDENTIAL));
+            byte[] b = new byte[cred.CredentialBlobSize];
+            Marshal.Copy(cred.CredentialBlob, b, 0, cred.CredentialBlobSize);
+            CredFree(pCred);
+            return Encoding.UTF8.GetString(b);
+        }
+        return null;
+    }
+}
+"@
+$res = [CredReader]::Read("${this.SERVICE}:${this.USER}")
+if ($res) { [Console]::Out.Write($res) }
+`;
+                const encoded = Buffer.from(psScript, 'utf16le').toString('base64');
+                const out = execSync(`powershell -NoProfile -NonInteractive -EncodedCommand ${encoded}`, { encoding: 'utf8' }).trim();
+                const jsonStart = out.indexOf('{');
+                if (jsonStart !== -1) {
+                    return JSON.parse(out.slice(jsonStart));
+                }
+            } else if (process.platform === 'darwin') {
+                const out = execSync(`security find-generic-password -s "${this.SERVICE}" -a "${this.USER}" -w`, { encoding: 'utf8' }).trim();
+                if (out) return JSON.parse(out);
+            } else {
+                const out = execSync(`secret-tool lookup service "${this.SERVICE}" username "${this.USER}"`, { encoding: 'utf8' }).trim();
+                if (out) return JSON.parse(out);
+            }
+        } catch (err) {
+            console.warn('[KeyringManager] Failed to read OS Keyring credentials:', err);
+        }
+        return null;
+    }
+}

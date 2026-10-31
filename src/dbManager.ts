@@ -283,6 +283,20 @@ export class DBManager {
     }
 
     static async readFullTokenInfo(dbPath?: string): Promise<{ access_token: string, refresh_token: string, expiry: number } | null> {
+        try {
+            const kr = KeyringManager.getAntigravityCredentials();
+            if (kr && kr.token && kr.token.access_token && kr.token.refresh_token) {
+                const expMs = kr.token.expiry ? new Date(kr.token.expiry).getTime() : Date.now() + 3600000;
+                return {
+                    access_token: kr.token.access_token,
+                    refresh_token: kr.token.refresh_token,
+                    expiry: Math.floor(expMs / 1000)
+                };
+            }
+        } catch (e) {
+            console.warn('[DBManager] Failed to read Keyring for readFullTokenInfo:', e);
+        }
+
         const resolvedDbPath = this.resolveDbPath(dbPath);
 
         if (!fs.existsSync(resolvedDbPath)) {
@@ -484,6 +498,21 @@ export class DBManager {
         name?: string;
         apiKey?: string;
     }> {
+        // 1. Supreme Source of Truth: OS Keyring (Windows Credential Manager / macOS Keychain / Linux Secret Service)
+        try {
+            const kr = KeyringManager.getAntigravityCredentials();
+            if (kr && kr.id_token_email) {
+                return {
+                    state: 'authenticated',
+                    email: kr.id_token_email,
+                    name: kr.id_token_email.split('@')[0],
+                    apiKey: kr.token ? kr.token.access_token : undefined
+                };
+            }
+        } catch (krErr) {
+            console.warn('[DBManager] Failed to read OS Keyring credentials:', krErr);
+        }
+
         const resolvedDbPath = this.resolveDbPath(dbPath);
 
         if (!fs.existsSync(resolvedDbPath)) {
@@ -493,6 +522,29 @@ export class DBManager {
         const db = await this.openDb(resolvedDbPath);
 
         try {
+            // 2. Check google.google-antigravity (agy.onboarding.lastLoginUsername)
+            try {
+                const agStmt = db.prepare("SELECT value FROM ItemTable WHERE key = ?");
+                agStmt.bind(["google.google-antigravity"]);
+                if (agStmt.step()) {
+                    const agRow = agStmt.getAsObject();
+                    if (agRow && agRow.value) {
+                        const parsed = JSON.parse(String(agRow.value));
+                        const storage = parsed["antigravity-storage"] || {};
+                        const email = storage["agy.onboarding.lastLoginUsername"];
+                        if (email) {
+                            agStmt.free();
+                            return {
+                                state: 'authenticated',
+                                email: email,
+                                name: email.split('@')[0]
+                            };
+                        }
+                    }
+                }
+                agStmt.free();
+            } catch (e) {}
+
             const stmt = db.prepare("SELECT value FROM ItemTable WHERE key = ?");
             stmt.bind(["antigravityAuthStatus"]);
 
