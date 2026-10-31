@@ -11,6 +11,7 @@ on:
 jobs:
   publish:
     runs-on: ubuntu-latest
+    environment: OPEN_VSX_TOKEN
     permissions:
       contents: write
       id-token: write
@@ -29,23 +30,20 @@ jobs:
       - name: Package Extension
         run: npx @vscode/vsce package
 
-      # Publish to Open VSX Registry (Trusted Publishing via OIDC or fallback PAT)
+      # Publish to Open VSX Registry (PAT from Environment or fallback OIDC)
       - name: Publish to Open VSX Registry
-        continue-on-error: true
         env:
           OPEN_VSX_TOKEN: ${{ secrets.OPEN_VSX_TOKEN }}
           OVSX_PAT: ${{ secrets.OVSX_PAT }}
           OPENVSX_TOKEN: ${{ secrets.OPENVSX_TOKEN }}
         run: |
-          echo "Attempting to publish to Open VSX via Trusted Publishing (OIDC)..."
-          if npx ovsx publish *.vsix --trusted-publishing; then
-            echo "✅ Successfully published to Open VSX via Trusted Publishing!"
+          PAT_TOKEN="${OPEN_VSX_TOKEN:-${OVSX_PAT:-$OPENVSX_TOKEN}}"
+          if [ -n "$PAT_TOKEN" ]; then
+            echo "Publishing to Open VSX with Personal Access Token..."
+            npx ovsx publish *.vsix --pat "$PAT_TOKEN"
           else
-            echo "Trusted Publishing failed, checking Personal Access Token fallback..."
-            PAT_TOKEN="${OPEN_VSX_TOKEN:-${OVSX_PAT:-$OPENVSX_TOKEN}}"
-            if [ -n "$PAT_TOKEN" ]; then
-              npx ovsx publish *.vsix --pat "$PAT_TOKEN" || echo "PAT publish also failed"
-            fi
+            echo "No PAT token found. Publishing to Open VSX via Trusted Publishing (OIDC)..."
+            npx ovsx publish *.vsix --trusted-publishing
           fi
 
       # Publish to VS Code Marketplace (official) - only if VSCE_PAT is set
