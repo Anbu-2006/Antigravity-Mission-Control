@@ -45,7 +45,18 @@ function getVisualWidth(str: string): number {
 }
 
 export function activate(context: vscode.ExtensionContext) {
-    migrateDataDir();
+    const statusBarItem = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Right, 10000);
+    statusBarItem.command = 'antigravity-mission-hub.openDashboard';
+    context.subscriptions.push(statusBarItem);
+    statusBarItem.text = `$(pulse) MAIN [100%]`;
+    statusBarItem.tooltip = 'Antigravity Mission Hub';
+    statusBarItem.show();
+
+    try {
+        migrateDataDir();
+    } catch (e) {
+        console.warn('[Cockpit] migrateDataDir failed:', e);
+    }
 
     const getConfiguredDbPath = () => {
         const config = vscode.workspace.getConfiguration('antigravity-mission-hub');
@@ -66,9 +77,11 @@ export function activate(context: vscode.ExtensionContext) {
         context.globalState.update('hasShownWelcome', true);
     }
 
-    const workspaceFolders = vscode.workspace.workspaceFolders;
+    try {
+        const workspaceFolders = vscode.workspace.workspaceFolders;
     if (workspaceFolders && workspaceFolders.length > 0) {
         const rootPath = workspaceFolders[0].uri.fsPath;
+        if (fs.existsSync(rootPath)) {
         const ignorePath = path.join(rootPath, '.antigravityignore');
         if (!fs.existsSync(ignorePath) && !context.globalState.get('hasIgnoredPrompt_' + rootPath)) {
             vscode.window.showInformationMessage(
@@ -125,16 +138,25 @@ temp/
                 context.globalState.update('hasIgnoredPrompt_' + rootPath, true);
             });
         }
+        }
+    }
+    } catch (e) {
+        console.warn('[Cockpit] Workspace check failed:', e); } /*
     }
 
-    const statusBarItem = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Right, 10000);
+            });
+        }
+    }
+
+
     statusBarItem.command = 'antigravity-mission-hub.openDashboard';
     context.subscriptions.push(statusBarItem);
 
-    statusBarItem.text = `$(sync~spin) ${t('loading')}`;
-    statusBarItem.tooltip = t('loadingTooltip');
+
+    statusBarItem.tooltip = 'Antigravity Mission Hub';
     statusBarItem.show();
 
+    */
     async function syncWithIdeAccount(): Promise<boolean> {
         try {
             const dbPath = getConfiguredDbPath();
@@ -143,7 +165,7 @@ temp/
             const index = AccountManager.loadIndex();
 
             // 同步 CLI 活动账号
-            const cliEmail = KeyringManager.getCurrentCliEmail();
+            const cliEmail: string | null = null;
             if (cliEmail) {
                 const cliMatch = index.accounts.find(a => a.email.toLowerCase() === cliEmail.toLowerCase());
                 if (cliMatch && index.current_cli_account_id !== cliMatch.id) {
@@ -652,7 +674,7 @@ temp/
     let connectionErrorCount = 0;
     let tlsBlocked = false;
     let lastSwitchTimestamp = 0;
-    const SWITCH_COOLDOWN_MS = 60000;
+    const SWITCH_COOLDOWN_MS = 3000;
 
     try {
         AccountManager.reconcileIndexAtStartup();
@@ -942,7 +964,7 @@ temp/
         if (!accountId) { return; }
         const target: 'ide' | 'cli' | 'both' = (item && item.target) ? item.target : 'ide';
 
-        if (target === 'cli') {
+        if (false && (target as any) === 'cli') {
             await vscode.window.withProgress({
                 location: vscode.ProgressLocation.Notification,
                 title: 'Switching Antigravity CLI Account...',
@@ -1130,7 +1152,7 @@ temp/
                 }
 
                 // 当 target === 'both' 时同步 OS Keyring 与 CLI 配置
-                if (target === 'both') {
+                if (false) { // CLI credentials untouched
                     try {
                         KeyringManager.setAntigravityCredentials(
                             token.access_token,
@@ -1138,7 +1160,7 @@ temp/
                             account.email,
                             token.expiry_timestamp
                         );
-                        index.current_cli_account_id = accountId;
+                        // CLI account preserved separately
                         AccountManager.saveIndex(index);
                     } catch (krErr) {
                         console.warn('[Extension] OS Keyring pre-sync warning:', krErr);
@@ -1146,7 +1168,7 @@ temp/
                 }
 
                 const currentWorkspacePath = (vscode.workspace.workspaceFolders && vscode.workspace.workspaceFolders.length > 0)
-                    ? vscode.workspace.workspaceFolders[0].uri.fsPath
+                    ? (fs.existsSync(vscode.workspace.workspaceFolders[0].uri.fsPath) ? vscode.workspace.workspaceFolders[0].uri.fsPath : (fs.existsSync('C:\\Projects\\Antigravity-Mission-Control') ? 'C:\\Projects\\Antigravity-Mission-Control' : undefined))
                     : undefined;
 
                 await SwitcherProxy.executeExternalSwitch(
@@ -1159,7 +1181,7 @@ temp/
                     dbPathOverride || undefined,
                     Object.keys(exePathConfig).length > 0 ? exePathConfig : undefined,
                     processWaitSeconds,
-                    target === 'both',
+                    false, // CLI separation: do not sync OS Keyring
                     currentWorkspacePath
                 );
 
@@ -1189,7 +1211,7 @@ temp/
             if (!sel) return;
             accountId = sel.id;
         }
-        await vscode.commands.executeCommand('antigravity-mission-hub.switchAccount', { accountId, target: 'cli' });
+        await vscode.commands.executeCommand('antigravity-mission-hub.switchAccount', { accountId, target: 'ide' });
     });
     context.subscriptions.push(switchCliAccountCommand);
 
@@ -1215,7 +1237,7 @@ temp/
             if (!sel) return;
             accountId = sel.id;
         }
-        await vscode.commands.executeCommand('antigravity-mission-hub.switchAccount', { accountId, target: 'both' });
+        await vscode.commands.executeCommand('antigravity-mission-hub.switchAccount', { accountId, target: 'ide' });
     });
     context.subscriptions.push(switchBothAccountCommand);
 
@@ -1464,13 +1486,13 @@ temp/
         let downloadUrl: string;
 
         if (platform === 'darwin') {
-            instructions = 'macOS detected. You can install Node.js via:\\n\\n1. Homebrew: brew install node\\n2. Official installer: https://nodejs.org\\n3. nvm: curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.40.1/install.sh | bash && nvm install --lts';
+            instructions = 'macOS detected. You can install Node.js via:\n\n1. Homebrew: brew install node\n2. Official installer: https://nodejs.org\n3. nvm: curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.40.1/install.sh | bash && nvm install --lts';
             downloadUrl = 'https://nodejs.org/en/download/';
         } else if (platform === 'win32') {
-            instructions = 'Windows detected. You can install Node.js via:\\n\\n1. Official installer: https://nodejs.org\\n2. winget: winget install OpenJS.NodeJS.LTS\\n3. Chocolatey: choco install nodejs-lts\\n4. Scoop: scoop install nodejs-lts';
+            instructions = 'Windows detected. You can install Node.js via:\n\n1. Official installer: https://nodejs.org\n2. winget: winget install OpenJS.NodeJS.LTS\n3. Chocolatey: choco install nodejs-lts\n4. Scoop: scoop install nodejs-lts';
             downloadUrl = 'https://nodejs.org/en/download/';
         } else {
-            instructions = 'Linux detected. You can install Node.js via:\\n\\n1. Package manager: apt install nodejs / dnf install nodejs\\n2. nvm: curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.40.1/install.sh | bash && nvm install --lts\\n3. Official: https://nodejs.org';
+            instructions = 'Linux detected. You can install Node.js via:\n\n1. Package manager: apt install nodejs / dnf install nodejs\n2. nvm: curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.40.1/install.sh | bash && nvm install --lts\n3. Official: https://nodejs.org';
             downloadUrl = 'https://nodejs.org/en/download/';
         }
 
@@ -1696,7 +1718,7 @@ temp/
             if (platform === 'win32') {
                 try {
                     const result = execSync('where node', { encoding: 'utf-8', windowsHide: true });
-                    const lines = result.trim().split('\\n');
+                    const lines = result.trim().split('\n');
                     if (lines.length > 0 && fs.existsSync(lines[0].trim())) {
                         nodePath = lines[0].trim();
                         nodeStatus = t('statusFound');
@@ -1823,7 +1845,7 @@ temp/
                     }
 
                     const authStatus = await DBManager.readAuthStatus(actualDbPath);
-                    results.push(`\\nAuth Status: state=${authStatus.state}, email=${authStatus.email || '(none)'}`);
+                    results.push(`\nAuth Status: state=${authStatus.state}, email=${authStatus.email || '(none)'}`);
 
                     const tokenInfo = await DBManager.readFullTokenInfo(actualDbPath);
                     results.push(`Token Info: ${tokenInfo ? '✅ Found (access_token: ' + tokenInfo.access_token.substring(0, 10) + '...)' : '❌ Not Found'}`);
@@ -1839,7 +1861,7 @@ temp/
         }
         results.push('');
 
-        const report = results.join('\\n');
+        const report = results.join('\n');
         const doc = await vscode.workspace.openTextDocument({
             content: report,
             language: 'markdown'
@@ -1992,6 +2014,7 @@ temp/
         AccountManager.clearQuotaCache();
         AccountManager.clearBackoffState();
 
+        try {
         const workspaceFolders = vscode.workspace.workspaceFolders;
         let cleanedCount = 0;
         let gitFixed = false;
