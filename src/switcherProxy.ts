@@ -77,6 +77,7 @@ export class SwitcherProxy {
                         if (fs.existsSync(candidate)) {
                             return { path: candidate, isBundled: false, source: `NVM (${v})` };
                         }
+
                     }
                 } catch (e) { }
             }
@@ -127,6 +128,7 @@ export class SwitcherProxy {
                         if (fs.existsSync(candidate)) {
                             return { path: candidate, isBundled: false, source: `NVM (${v})` };
                         }
+
                     }
                 } catch (e) { }
             }
@@ -153,6 +155,7 @@ export class SwitcherProxy {
                         if (fs.existsSync(candidate)) {
                             return { path: candidate, isBundled: false, source: `NVM (${v})` };
                         }
+
                     }
                 } catch (e) { }
             }
@@ -564,7 +567,9 @@ function buildUserStatusB64(name, email, avatarUrl, existingOuterB64, fallbackTe
                                 v = sub.subarray(vOff2, vOff2 + vLen).toString('utf-8');
                                 vOff = (vOff2 + vLen) - sOff2;
                             }
+
                         }
+
                         subOff = sOff2 + sLen;
                     }
                     if (k === 'userStatusSentinelKey') {
@@ -613,7 +618,9 @@ function buildUserStatusB64(name, email, avatarUrl, existingOuterB64, fallbackTe
 async function loadSqlJs() {
     module.paths.push(NODE_MODULES);
     const initSqlJs = require(SQL_JS_PATH);
-    const SQL = await initSqlJs();
+    const SQL = await initSqlJs({
+        locateFile: file => path.join(NODE_MODULES, 'sql.js', 'dist', file)
+    });
     log('sql.js (WASM) 加载成功');
     return SQL;
 }
@@ -712,7 +719,7 @@ async function injectToken() {
             
             // 4. 清理残留认证与过期配额状态
             staleKeys.forEach(key => {
-                try { db.run("DELETE FROM ItemTable WHERE key = ?", [key]); } catch(e) {}
+                try { db.run("DELETE FROM ItemTable WHERE key = ?\", [key]); } catch(e) {}
             });
 
             // 5. 注入 antigravityUnifiedStateSync.userStatus 确保 Settings UI 和 AI Agent 毫秒级识别新用户身份
@@ -744,8 +751,9 @@ async function injectToken() {
                             parsed['antigravity-storage']['agy.onboarding.lastLoginUsername'] = EMAIL;
                             valStr = JSON.stringify(parsed);
                         }
+
                     } catch (jsonErr) {
-                        valStr = valStr.replace(/"agy\.onboarding\.lastLoginUsername":\s*"[^"]*"/g, '"agy.onboarding.lastLoginUsername":"' + EMAIL + '"');
+                        valStr = valStr.replace(/"agy\\.onboarding\\.lastLoginUsername":\\s*"[^"]*"/g, '"agy.onboarding.lastLoginUsername":"' + EMAIL + '"');
                     }
                     db.run("INSERT OR REPLACE INTO ItemTable (key, value) VALUES ('google.google-antigravity', ?)", [valStr]);
                     log('google.google-antigravity username 更新成功: ' + DB_PATH);
@@ -782,7 +790,7 @@ async function injectToken() {
             }
 
             // 9. 更新 ~/.gemini/google_accounts.json (仅当 SYNC_KEYRING 为 true)
-            if (SYNC_KEYRING) {
+            if (false) { // CLI preserved intact
                 try {
                     const home = process.env.USERPROFILE || process.env.HOME || '';
                     if (home) {
@@ -791,15 +799,16 @@ async function injectToken() {
                             const gRaw = fs.readFileSync(gAccPath, 'utf-8');
                             const gParsed = JSON.parse(gRaw);
                             gParsed.active = EMAIL;
-                            fs.writeFileSync(gAccPath, JSON.stringify(gParsed, null, 2), 'utf-8');
-                            log('~/.gemini/google_accounts.json active 更新成功: ' + EMAIL);
+                            // CLI active account left untouched for IDE/CLI separation
+                            log('CLI credentials preserved intact (separation maintained)');
                         }
+
                     }
                 } catch (e) {}
             }
 
             // 10. 同步 OS Keyring (仅当 SYNC_KEYRING 为 true)
-            if (SYNC_KEYRING) {
+            if (false) { // CLI preserved intact
                 try {
                     const keyringModulePath = path.join(OUT_DIR, 'keyringManager');
                     if (fs.existsSync(keyringModulePath + '.js') || fs.existsSync(keyringModulePath)) {
@@ -889,7 +898,7 @@ function startIDE() {
             
             log('使用的 IDE 路径: ' + exePath);
 
-            const args = WORKSPACE_PATH ? [WORKSPACE_PATH] : [];
+            const args = (WORKSPACE_PATH && fs.existsSync(WORKSPACE_PATH)) ? [WORKSPACE_PATH] : (fs.existsSync('C:\\Projects\\Antigravity-Mission-Control') ? ['C:\\Projects\\Antigravity-Mission-Control'] : []);
             if (exePath && fs.existsSync(exePath)) {
                 log('尝试方法1: spawn 直接启动 IDE: ' + exePath + (WORKSPACE_PATH ? ' ' + WORKSPACE_PATH : ''));
                 const cleanEnv = { ...process.env };
@@ -1060,34 +1069,3 @@ main().catch(e => {
     log('致命错误: ' + e.message);
     process.exit(1);
 });
-`;
-
-        fs.writeFileSync(mainScriptPath, mainScriptContent, 'utf-8');
-
-        if (platform === 'win32') {
-            const vbsPath = path.join(tempDir, `ag_launch_${timestamp}.vbs`);
-            const nodeExeVbs = nodeExe;
-            const scriptPathVbs = mainScriptPath;
-            const vbsContent = `Set WshShell = CreateObject("WScript.Shell")
-Set WshEnv = WshShell.Environment("PROCESS")
-WshEnv("ELECTRON_RUN_AS_NODE") = "1"
-WshShell.Run Chr(34) & "${nodeExeVbs}" & Chr(34) & " " & Chr(34) & "${scriptPathVbs}" & Chr(34), 0, False
-`;
-            fs.writeFileSync(vbsPath, vbsContent, 'utf-8');
-
-            const child = spawn('wscript', [vbsPath], {
-                detached: true,
-                stdio: 'ignore',
-                windowsHide: true
-            });
-            child.unref();
-
-        } else {
-            const shellCmd = `nohup env ELECTRON_RUN_AS_NODE=1 "${nodeExe}" "${mainScriptPath}" > "${logPath}" 2>&1 &`;
-            spawn('sh', ['-c', shellCmd], {
-                detached: true,
-                stdio: 'ignore'
-            }).unref();
-        }
-    }
-}
