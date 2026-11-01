@@ -2,6 +2,13 @@
 
 Release notes and development milestones.
 
+## [v1.2.2] - 2026-11-02
+### Production Release: 100% Pure Antigravity IDE Controller & Automated 401 Recovery
+- **100% Pure IDE Account Controller**: Complete decoupling from the Antigravity CLI (`agy`) and OS Keyring (`gemini:antigravity`). Switching accounts in Mission Hub exclusively updates the Antigravity IDE session without touching CLI credentials or terminal auth.
+- **Total UI Purification**: Eliminated all `CLI:` header tags, `[CLI]` fleet badges, and CLI switching commands across the entire extension and dashboard webview.
+- **Silent 401 Auto-Recovery**: Account refresh and quota polling automatically intercept Google HTTP 401 Unauthorized responses, silently refresh the access token via OAuth refresh tokens, and retry seamlessly without displaying error modals.
+- **Backoff & Rate-Limit Optimization**: Manual refresh resets backoff timers immediately, allowing quick telemetry recovery following HTTP 429 cooling periods.
+
 ## [v1.2.1] - 2026-11-01
 ### Production Release: Independent IDE/CLI Separation & Eager Status Bar Telemetry
 - **Strict IDE vs CLI Independence**: Switching accounts in Antigravity Mission Hub strictly updates Antigravity IDE state without altering the separate Antigravity CLI (`agy`) credentials in `~/.gemini/google_accounts.json` or the OS Keyring.
