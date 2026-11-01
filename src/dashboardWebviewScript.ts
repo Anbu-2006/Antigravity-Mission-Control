@@ -8,7 +8,6 @@ const state = vscode.getState() || {};
 let accounts = ACCOUNTS_PLACEHOLDER;
 let groupsConfig = GROUPS_PLACEHOLDER;
 let currentIdeEmail = IDE_EMAIL_PLACEHOLDER;
-let currentCliEmail = CLI_EMAIL_PLACEHOLDER;
 let activeAccountId = state.activeAccountId;
 let serviceStatus = SERVICE_STATUS_PLACEHOLDER;
 let groupModelScope = 'current';
@@ -105,7 +104,6 @@ window.addEventListener('message', event => {
         const prevIdeEmail = currentIdeEmail;
         accounts = m.accounts;
         if (m.ideEmail !== undefined) currentIdeEmail = m.ideEmail;
-        if (m.cliEmail !== undefined) currentCliEmail = m.cliEmail;
         if (m.uiState) state.uiState = m.uiState;
         if (m.ideEmail && m.ideEmail !== prevIdeEmail) {
             const newIdeAcc = accounts.find(a => a.email && a.email.toLowerCase() === m.ideEmail.toLowerCase());
@@ -130,11 +128,8 @@ function pctColor(p) { return p > 50 ? '#00ff66' : p > 20 ? '#d4a843' : '#ff2a2a
 
 function updateNavStatus() {
     const ideEl = document.getElementById('navIdeAccount');
-    const cliEl = document.getElementById('navCliAccount');
     const ideAcc = accounts.find(a => a.isIdeCurrent || a.isCurrent);
-    const cliAcc = accounts.find(a => a.isCliCurrent);
     if (ideEl) ideEl.textContent = ideAcc ? ideAcc.email : (currentIdeEmail || 'None');
-    if (cliEl) cliEl.textContent = cliAcc ? cliAcc.email : (currentCliEmail || 'None');
 }
 
 function renderAll() {
@@ -168,7 +163,7 @@ function renderTrafficNetwork() {
         color = 'var(--text-muted)'; icon = '○'; pulse = '';
     }
 
-    el.innerHTML = \`
+    el.innerHTML = `
         <div class="sg-status-wrap">
             <div class="sg-orb-wrap">
                 <div class="sg-orb \${pulse}" style="background:\${color};box-shadow:0 0 18px \${color},0 0 6px \${color}"></div>
@@ -179,7 +174,7 @@ function renderTrafficNetwork() {
                 <a class="sg-link" href="https://statusgator.com/services/google-antigravity" target="_blank" title="View full StatusGator report">↗ StatusGator</a>
             </div>
         </div>
-    \`;
+    `;
 
     let gCount = 0, gTotal = 0, aCount = 0, aTotal = 0, isRl = false;
     accounts.forEach(acc => {
@@ -266,17 +261,15 @@ function renderFocusNode() {
 
     const tier = (acc.quota && acc.quota.tier) ? acc.quota.tier.toUpperCase() : 'STANDARD';
     const displayName = acc.name || acc.email.split('@')[0];
-    const isIdeCur = !!(acc.isIdeCurrent || acc.isCurrent);
-    const isCliCur = !!acc.isCliCurrent;
+    const isCur = !!(acc.isIdeCurrent || acc.isCurrent);
     let badges = '';
-    if (isIdeCur) badges += '<span class="live-indicator ide-indicator">⚡ IDE ACTIVE</span>';
-    if (isCliCur) badges += '<span class="live-indicator cli-indicator">💻 CLI ACTIVE</span>';
+    if (isCur) badges += '<span class="live-indicator">ACTIVE</span>';
     let actBtns = '';
-    if (!isIdeCur) actBtns += \`<button class="action-btn" title="Activate only in Antigravity IDE (restarts IDE)" onclick="doSwitch('\${acc.id}','\${acc.email}','ide')">⚡ ACTIVATE IDE</button>\`;
-    if (!isCliCur) actBtns += \`<button class="action-btn cyan" title="Activate only in Antigravity CLI / agy (instant, no restart)" onclick="doSwitch('\${acc.id}','\${acc.email}','cli')">💻 ACTIVATE CLI</button>\`;
-    if (!isIdeCur && !isCliCur) actBtns += \`<button class="action-btn ghost" title="Activate in both IDE and CLI simultaneously" onclick="doSwitch('\${acc.id}','\${acc.email}','both')">⚡💻 BOTH</button>\`;
+    if (!isCur) {
+        actBtns += `<button class="action-btn" title="Activate account in Antigravity IDE (restarts IDE)" onclick="doSwitch('\${acc.id}','\${acc.email}')">ACTIVATE</button>`;
+    }
     
-    let h = \`
+    let h = `
         <div class="hero-top">
             <div class="hero-info">
                 <div class="hero-name">\${displayName}\${badges}</div>
@@ -303,7 +296,7 @@ function renderFocusNode() {
                 <div class="stat-lbl">Used</div>
             </div>
         </div>
-    \`;
+    `;
 
     if (panel) panel.innerHTML = h;
 
@@ -371,26 +364,26 @@ function renderFocusNode() {
             const cons = 100 - m.percentage;
             const usedVal = m.used || 0;
             const limitVal = m.limit || 0;
-            const uStr = (usedVal > 0 || limitVal > 0) ? \`USAGE: \${usedVal.toLocaleString()} / \${limitVal.toLocaleString()} TOKENS\` : \`CONSUMED: \${cons}%\`;
+            const uStr = (usedVal > 0 || limitVal > 0) ? `USAGE: \${usedVal.toLocaleString()} / \${limitVal.toLocaleString()} TOKENS` : `CONSUMED: \${cons}%`;
 
-            b += \`
+            b += `
             <div class="m-bar-wrap">
                 <div class="m-bar-top"><span>\${m.displayName}</span><span style="color:\${c}">\${m.percentage}%</span></div>
                 <div class="m-bar-track"><div class="m-bar-fill" style="width:\${m.percentage}%;background:\${c};color:\${c}"></div></div>
                 <div class="m-bar-sub"><span>\${uStr}</span><span>Reset: \${rTime}</span></div>
-            </div>\`;
+            </div>`;
         });
         b += '</div>';
     } else if (isErr) {
         const statusCode = (acc.quota && acc.quota.error_status) ? acc.quota.error_status : (isRl ? 429 : 500);
-        b += \`<div style="text-align:center;padding:20px;color:var(--red);font-family:monospace">
+        b += `<div style="text-align:center;padding:20px;color:var(--red);font-family:monospace">
             <div style="font-size:14px;margin-bottom:5px">[ HTTP \${statusCode} ]</div>
             <div>\${statusCode === 429 ? 'RATE LIMIT DETECTED' : 'TELEMETRY FAILURE'}</div>
             <div style="font-size:10px;margin-top:5px;color:var(--text-muted)">\${acc.quota.error_message || ''}</div>
-            <button class="action-btn ghost" style="margin-top:12px;font-size:10px;padding:4px 12px" onclick="doRefresh(\'\${acc.id}\')">REFRESH TELEMETRY</button>
-        </div>\`;
+            <button class="action-btn ghost" style="margin-top:12px;font-size:10px;padding:4px 12px" onclick="doRefresh('\${acc.id}')">REFRESH TELEMETRY</button>
+        </div>`;
     } else {
-        b += \`<div style="text-align:center;padding:20px;color:var(--text-muted);font-family:monospace">AWAITING TELEMETRY DATA...</div>\`;
+        b += `<div style="text-align:center;padding:20px;color:var(--text-muted);font-family:monospace">AWAITING TELEMETRY DATA...</div>`;
     }
     if (bdown) bdown.innerHTML = b;
 }
@@ -400,7 +393,7 @@ function renderFleetGrid() {
     if (!grid) return;
     let h = '';
     accounts.forEach(acc => {
-        const isCur = acc.isCurrent;
+        const isCur = !!(acc.isIdeCurrent || acc.isCurrent);
         const isSel = acc.id === activeAccountId;
         let p = 0;
         if (acc.quota && acc.quota.models && !acc.quota.is_error && acc.quota.models.length > 0) {
@@ -410,21 +403,18 @@ function renderFleetGrid() {
         const c = isErr ? 'var(--red)' : pctColor(p);
         const name = acc.name || acc.email.split('@')[0];
 
-        const isIdeCur = !!(acc.isIdeCurrent || acc.isCurrent);
-        const isCliCur = !!acc.isCliCurrent;
-        h += \`
+        h += `
         <div class="t-node-v \${isSel ? 'active' : ''}" onclick="selectNode('\${acc.id}')">
-            \${isIdeCur ? \`<div class="t-indicator" style="background:var(--green);box-shadow:0 0 5px var(--green)"></div>\` : (isCliCur ? \`<div class="t-indicator" style="background:var(--cyan);box-shadow:0 0 5px var(--cyan)"></div>\` : '')}
+            \${isCur ? `<div class="t-indicator" style="background:var(--green);box-shadow:0 0 5px var(--green)"></div>` : ''}
             <div class="t-ring" style="border-color:\${c};color:\${c}">\${isErr ? '!' : p}</div>
             <div class="t-info">
                 <div class="t-name">\${name}</div>
                 <div class="t-email">\${acc.email}</div>
                 <div class="t-badges-wrap">
-                    \${isIdeCur ? '<span class="t-badge t-badge-ide">IDE</span>' : ''}
-                    \${isCliCur ? '<span class="t-badge t-badge-cli">CLI</span>' : ''}
+                    \${isCur ? '<span class="t-badge t-badge-ide">ACTIVE</span>' : ''}
                 </div>
             </div>
-        </div>\`;
+        </div>`;
     });
     grid.innerHTML = h;
 }
@@ -436,7 +426,12 @@ function selectNode(id) {
     renderAll();
 }
 
-function doSwitch(id, em, target = 'ide') { activeAccountId = id; vscode.setState({ activeAccountId }); renderAll(); vscode.postMessage({ command: 'switch', accountId: id, email: em, target: target }); }
+function doSwitch(id, em) { 
+    activeAccountId = id; 
+    vscode.setState({ activeAccountId }); 
+    renderAll(); 
+    vscode.postMessage({ command: 'switch', accountId: id, email: em, target: 'ide' }); 
+}
 function doRefresh(id, silent=false) { vscode.postMessage({ command: 'refresh', accountId: id, silent }); }
 function doRefreshAll() { vscode.postMessage({ command: 'refreshAll' }); }
 function doAdd() { vscode.postMessage({ command: 'addAccount' }); }
@@ -468,14 +463,14 @@ function openAllModels() {
         const cons = 100 - m.percentage;
         const usedVal = m.used || 0;
         const limitVal = m.limit || 0;
-        const uStr = (usedVal > 0 || limitVal > 0) ? \`\${usedVal.toLocaleString()} / \${limitVal.toLocaleString()} tokens\` : \`\${cons}% used\`;
+        const uStr = (usedVal > 0 || limitVal > 0) ? `\${usedVal.toLocaleString()} / \${limitVal.toLocaleString()} tokens` : `\${cons}% used`;
 
-        html += \`
+        html += `
         <div class="m-bar-wrap" style="margin-bottom:12px; border-bottom:1px solid rgba(255,255,255,0.1); padding-bottom:8px;">
             <div class="m-bar-top"><span>\${getDisplayName(m.name)}</span><span style="color:\${c}">\${m.percentage}%</span></div>
             <div class="m-bar-track"><div class="m-bar-fill" style="width:\${m.percentage}%;background:\${c};color:\${c}"></div></div>
             <div class="m-bar-sub"><span>\${uStr}</span><span>Reset: \${rTime}</span></div>
-        </div>\`;
+        </div>`;
     });
     
     document.getElementById('allModelsList').innerHTML = html;
@@ -488,12 +483,12 @@ function closeAllModels() {
 // Groups
 function getAllModels() { 
     const m=[]; 
-    accounts.forEach(a=>{\
-        if(a.quota&&a.quota.models) {\
-            a.quota.models.forEach(x=>{\
-                if(!m.find(y=>y.name===x.name)) m.push({name:x.name, resetTime:x.reset_time_raw||x.reset_time||''});\
-            });\
-        }\
+    accounts.forEach(a=>{
+        if(a.quota&&a.quota.models) {
+            a.quota.models.forEach(x=>{
+                if(!m.find(y=>y.name===x.name)) m.push({name:x.name, resetTime:x.reset_time_raw||x.reset_time||''});
+            });
+        }
     }); 
     return m; 
 }
@@ -550,7 +545,7 @@ function renderGroupsList() {
         + '<button class="action-btn danger ghost" style="padding:4px 8px;font-size:10px" onclick="deleteGroup(\\'' + g.id + '\\')">DEL</button></div>'
         + '<div class="gc-tags">' + g.models.map(mn => '<span class="gc-tag">' + getDisplayName(mn) + '<span class="gc-rm" onclick="removeModelFromGroup(\\'' + g.id + '\\',\\'' + mn + '\\')">&times;</span></span>').join('')
         + '<button class="gc-add" onclick="toggleDD(\\'' + g.id + '\\',event)">+ ADD</button>'
-        + '<div class="gc-dd" id="dd-' + g.id + '">' + all.filter(m => !g.models.includes(m.name)).map(m => '<div class="gc-dd-item' + (used.has(m.name)&&!g.models.includes(m.name)?' disabled':'') + '" onclick="' + (used.has(m.name)&&!g.models.includes(m.name)?'':(\"addModelToGroup('\"+g.id+\"','\"+m.name+\"')\")) + '">' + getDisplayName(m.name) + '</div>').join('') + '</div>'
+        + '<div class="gc-dd" id="dd-' + g.id + '">' + all.filter(m => !g.models.includes(m.name)).map(m => '<div class="gc-dd-item' + (used.has(m.name)&&!g.models.includes(m.name)?' disabled':'') + '" onclick="' + (used.has(m.name)&&!g.models.includes(m.name)?'':("addModelToGroup('"+g.id+"','"+m.name+"')")) + '">' + getDisplayName(m.name) + '</div>').join('') + '</div>'
         + '</div></div>').join('');
 }
 
