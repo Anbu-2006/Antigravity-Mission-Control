@@ -1,8 +1,5 @@
 import * as vscode from 'vscode';
 import { AccountManager, Account, TokenInfo } from './accountManager';
-import { ProcessManager } from './processManager';
-import { DBManager } from './dbManager';
-import { KeyringManager } from './keyringManager';
 
 export class AccountTreeProvider implements vscode.TreeDataProvider<AccountItem | QuotaItem> {
     private _onDidChangeTreeData: vscode.EventEmitter<AccountItem | QuotaItem | undefined | void> = new vscode.EventEmitter<AccountItem | QuotaItem | undefined | void>();
@@ -20,17 +17,14 @@ export class AccountTreeProvider implements vscode.TreeDataProvider<AccountItem 
         if (!element) {
             // Root - List accounts
             const index = AccountManager.loadIndex();
-            const cliEmail = KeyringManager.getCurrentCliEmail();
             return index.accounts.map(acc => {
-                const isIdeCurrent = acc.id === index.current_account_id;
-                const isCliCurrent = !!((cliEmail && acc.email && cliEmail.toLowerCase() === acc.email.toLowerCase()) || (acc.id === index.current_cli_account_id));
+                const isCurrent = acc.id === index.current_account_id;
                 return new AccountItem(
                     acc.email,
                     acc.name,
                     acc.id,
-                    (isIdeCurrent || isCliCurrent) ? vscode.TreeItemCollapsibleState.Expanded : vscode.TreeItemCollapsibleState.Collapsed,
-                    isIdeCurrent,
-                    isCliCurrent
+                    isCurrent ? vscode.TreeItemCollapsibleState.Expanded : vscode.TreeItemCollapsibleState.Collapsed,
+                    isCurrent
                 );
             });
         } else {
@@ -51,7 +45,22 @@ export class AccountTreeProvider implements vscode.TreeDataProvider<AccountItem 
                     AccountManager.saveAccount(account);
                 }
 
-                const quota = await AccountManager.fetchQuotaCached(token.access_token);
+                let quota: any;
+                try {
+                    quota = await AccountManager.fetchQuotaCached(token.access_token);
+                } catch (qErr: any) {
+                    if (qErr.response && qErr.response.status === 401 && token.refresh_token) {
+                        const refreshed = await AccountManager.refreshToken(token.refresh_token);
+                        token.access_token = refreshed.accessToken;
+                        token.expiry_timestamp = Math.floor(Date.now() / 1000) + refreshed.expiresIn;
+                        account.token = token;
+                        AccountManager.saveAccount(account);
+                        AccountManager.clearQuotaCache(token.access_token);
+                        quota = await AccountManager.fetchQuotaCached(token.access_token);
+                    } else {
+                        throw qErr;
+                    }
+                }
                 if (quota.is_forbidden) {
                     return [new QuotaItem("Forbidden", "No access", vscode.TreeItemCollapsibleState.None)];
                 }
@@ -70,25 +79,15 @@ class AccountItem extends vscode.TreeItem {
         public readonly name: string,
         public readonly accountId: string,
         public readonly collapsibleState: vscode.TreeItemCollapsibleState,
-        public readonly isIdeCurrent: boolean,
-        public readonly isCliCurrent: boolean = false
+        public readonly isCurrent: boolean
     ) {
         super(email, collapsibleState);
-        let tag = '';
-        if (isIdeCurrent && isCliCurrent) {
-            tag = ' [IDE + CLI]';
-        } else if (isIdeCurrent) {
-            tag = ' [IDE]';
-        } else if (isCliCurrent) {
-            tag = ' [CLI]';
-        }
+        const tag = isCurrent ? ' [Active]' : '';
         this.tooltip = `${name} (${email})${tag}`;
         this.description = `${name}${tag}`;
-        this.contextValue = isIdeCurrent ? 'accountCurrent' : 'account';
-        if (isIdeCurrent) {
+        this.contextValue = isCurrent ? 'accountCurrent' : 'account';
+        if (isCurrent) {
             this.iconPath = new vscode.ThemeIcon('check', new vscode.ThemeColor('charts.green'));
-        } else if (isCliCurrent) {
-            this.iconPath = new vscode.ThemeIcon('terminal', new vscode.ThemeColor('charts.blue'));
         } else {
             this.iconPath = new vscode.ThemeIcon('account');
         }
