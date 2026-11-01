@@ -40,7 +40,6 @@ export interface AccountSummary {
 export interface AccountIndex {
     accounts: AccountSummary[];
     current_account_id: string | null;
-    current_cli_account_id?: string | null;
     ui_state?: {
         currentView?: string;
         listSortKey?: string;
@@ -314,7 +313,7 @@ export class AccountManager {
         let finalResponse: any = null;
         let lastError: any = null;
 
-        const candidateProjects = [finalProjectId, "aicode-consumers", ""];
+        const candidateProjects = Array.from(new Set([finalProjectId, "aicode-consumers", ""])).filter(p => p !== undefined);
 
         for (const ep of QUOTA_API_ENDPOINTS) {
             for (const proj of candidateProjects) {
@@ -479,14 +478,18 @@ export class AccountManager {
                 console.warn(`[Cockpit] Quota fetch error, backoff #${currentFailures}: next retry in ${Math.round(jitter/1000)}s`);
             }
             return data;
-        } catch (e) {
-            const currentFailures = (backoff?.failures || 0) + 1;
-            const baseDelay = Math.min(10000 * Math.pow(2, currentFailures - 1), 60000);
-            const jitter = baseDelay * (0.85 + Math.random() * 0.3);
-            this._backoffState.set(cacheKey, {
-                failures: currentFailures,
-                nextRetryAt: Date.now() + jitter
-            });
+        } catch (e: any) {
+            if (e.response?.status !== 401) {
+                const currentFailures = (backoff?.failures || 0) + 1;
+                const baseDelay = Math.min(10000 * Math.pow(2, currentFailures - 1), 60000);
+                const jitter = baseDelay * (0.85 + Math.random() * 0.3);
+                this._backoffState.set(cacheKey, {
+                    failures: currentFailures,
+                    nextRetryAt: Date.now() + jitter
+                });
+            } else {
+                this._backoffState.delete(cacheKey);
+            }
             throw e;
         }
     }
