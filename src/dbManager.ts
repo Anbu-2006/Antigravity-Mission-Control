@@ -9,7 +9,6 @@ import {
     DB_KEY_ONBOARDING
 } from './constants';
 import { encodeVarint, removeField, buildUserStatusB64 } from './utils';
-import { KeyringManager } from './keyringManager';
 
 // sql.js WASM 初始化（单例，避免多次加载）
 let sqlJsPromise: Promise<any> | null = null;
@@ -62,7 +61,7 @@ export class DBManager {
         fs.writeFileSync(dbPath, buffer);
     }
 
-    static async injectToken(accessToken: string, refreshToken: string, expiry: number, email: string, name?: string, avatarUrl?: string, dbPath?: string, syncKeyring: boolean = true) {
+    static async injectToken(accessToken: string, refreshToken: string, expiry: number, email: string, name?: string, avatarUrl?: string, dbPath?: string) {
         const targetPaths = dbPath && dbPath.trim() ? [dbPath.trim()] : getAllVSCDBPaths();
 
         for (const resolvedDbPath of targetPaths) {
@@ -200,30 +199,7 @@ export class DBManager {
                     console.error('Failed to inject antigravityAuthStatus', e);
                 }
 
-                // 9. 更新 ~/.gemini/google_accounts.json (仅当 syncKeyring 为 true 时)
-                if (false) { // CLI preserved separately
-                    try {
-                        const home = process.env.USERPROFILE || process.env.HOME || '';
-                        if (home) {
-                            const gAccPath = path.join(home, '.gemini', 'google_accounts.json');
-                            if (fs.existsSync(gAccPath)) {
-                                const gRaw = fs.readFileSync(gAccPath, 'utf-8');
-                                const gParsed = JSON.parse(gRaw);
-                                gParsed.active = email;
-                                fs.writeFileSync(gAccPath, JSON.stringify(gParsed, null, 2), 'utf-8');
-                            }
-                        }
-                    } catch (e) { /* ignore */ }
-                }
-
-                // 10. 同步 OS Keyring (Windows Credential Manager / macOS Keychain / Linux Secret Service) (仅当 syncKeyring 为 true 时)
-                if (false) { // CLI preserved separately
-                    try {
-                        KeyringManager.setAntigravityCredentials(accessToken, refreshToken, email, expiry);
-                    } catch (e) {
-                        console.error('Failed to sync OS Keyring', e);
-                    }
-                }
+                // 9. OS Keyring & CLI credentials untouched (pure IDE separation)
 
                 // 写回磁盘
                 this.saveDb(db, resolvedDbPath);
@@ -478,21 +454,6 @@ export class DBManager {
             db.close();
         }
 
-        // Fallback to Keyring if DB doesn't have it
-        try {
-            const kr = KeyringManager.getAntigravityCredentials();
-            if (kr && kr.token && kr.token.access_token && kr.token.refresh_token) {
-                const expMs = kr.token.expiry ? new Date(kr.token.expiry).getTime() : Date.now() + 3600000;
-                return {
-                    access_token: kr.token.access_token,
-                    refresh_token: kr.token.refresh_token,
-                    expiry: Math.floor(expMs / 1000)
-                };
-            }
-        } catch (e) {
-            console.warn('[DBManager] Failed to read Keyring for readFullTokenInfo fallback:', e);
-        }
-
         return null;
     }
 
@@ -694,15 +655,13 @@ export class DBManager {
             }
         } catch (e) {}
 
-        // DO NOT fall back to OS Keyring here. OS Keyring is strictly for Antigravity CLI (agy).
-        // Falling back to OS Keyring here would overwrite the IDE account with the CLI account,
-        // violating independent account separation.
+        // Pure IDE separation: OS Keyring is never accessed here
         return { state: 'missing' };
     }
 
     /**
      * Reads the active Antigravity CLI (agy) authentication status.
-     * Supreme source of truth for CLI is OS Keyring & ~/.gemini/google_accounts.json.
+     * Decoupled in v1.2.2.
      */
     static readCLIAuthStatus(): {
         state: 'authenticated' | 'missing';
@@ -710,27 +669,6 @@ export class DBManager {
         name?: string;
         apiKey?: string;
     } {
-        try {
-            const kr = KeyringManager.getAntigravityCredentials();
-            if (kr && kr.id_token_email) {
-                return {
-                    state: 'authenticated',
-                    email: kr.id_token_email,
-                    name: kr.id_token_email.split('@')[0],
-                    apiKey: kr.token ? kr.token.access_token : undefined
-                };
-            }
-        } catch (e) {}
-
-        const cliEmail = KeyringManager.getCurrentCliEmail();
-        if (cliEmail) {
-            return {
-                state: 'authenticated',
-                email: cliEmail,
-                name: cliEmail.split('@')[0]
-            };
-        }
-
         return { state: 'missing' };
     }
 
