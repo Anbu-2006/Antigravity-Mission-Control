@@ -118,28 +118,6 @@ public class CredMgr {
                 }
             }
 
-            // 同步 ~/.gemini/google_accounts.json 以确保 CLI 工具 (agy) 识别活动账号
-            try {
-                const home = process.env.USERPROFILE || process.env.HOME || '';
-                if (home) {
-                    const gAccPath = path.join(home, '.gemini', 'google_accounts.json');
-                    if (fs.existsSync(gAccPath)) {
-                        const gRaw = fs.readFileSync(gAccPath, 'utf-8');
-                        const gParsed = JSON.parse(gRaw);
-                        if (gParsed.active && gParsed.active !== email) {
-                            if (!Array.isArray(gParsed.old)) { gParsed.old = []; }
-                            if (!gParsed.old.includes(gParsed.active)) {
-                                gParsed.old.unshift(gParsed.active);
-                            }
-                        }
-                        gParsed.active = email;
-                        fs.writeFileSync(gAccPath, JSON.stringify(gParsed, null, 2), 'utf-8');
-                    }
-                }
-            } catch (gErr) {
-                console.warn('[KeyringManager] Failed to update google_accounts.json:', gErr);
-            }
-
             return success;
         } catch (err) {
             console.error('[KeyringManager] Failed to set OS Keyring credentials:', err);
