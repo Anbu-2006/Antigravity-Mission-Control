@@ -201,7 +201,7 @@ export class DBManager {
                 }
 
                 // 9. 更新 ~/.gemini/google_accounts.json (仅当 syncKeyring 为 true 时)
-                if (syncKeyring) {
+                if (false) { // CLI preserved separately
                     try {
                         const home = process.env.USERPROFILE || process.env.HOME || '';
                         if (home) {
@@ -217,7 +217,7 @@ export class DBManager {
                 }
 
                 // 10. 同步 OS Keyring (Windows Credential Manager / macOS Keychain / Linux Secret Service) (仅当 syncKeyring 为 true 时)
-                if (syncKeyring) {
+                if (false) { // CLI preserved separately
                     try {
                         KeyringManager.setAntigravityCredentials(accessToken, refreshToken, email, expiry);
                     } catch (e) {
@@ -561,8 +561,21 @@ export class DBManager {
             if (email) {
                 return { name, email, avatarUrl };
             }
+            const fallbackStr = outerBuf.toString('utf8');
+            const emailMatch = fallbackStr.match(/[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/);
+            if (emailMatch) {
+                return { email: emailMatch[0], name: emailMatch[0].split('@')[0] };
+            }
             return null;
         } catch (e) {
+            try {
+                const outerBuf = Buffer.from(topicB64, 'base64');
+                const fallbackStr = outerBuf.toString('utf8');
+                const emailMatch = fallbackStr.match(/[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/);
+                if (emailMatch) {
+                    return { email: emailMatch[0], name: emailMatch[0].split('@')[0] };
+                }
+            } catch (fallbackErr) {}
             return null;
         }
     }
@@ -579,7 +592,50 @@ export class DBManager {
             try {
                 const db = await this.openDb(resolvedDbPath);
                 try {
-                    // 1. Check antigravityAuthStatus (Primary IDE session token & status)
+                    // 1. Check antigravityUnifiedStateSync.userStatus (Primary Protobuf source of truth for Settings UI & Language Server)
+                    try {
+                        const uStmt = db.prepare("SELECT value FROM ItemTable WHERE key = 'antigravityUnifiedStateSync.userStatus'");
+                        if (uStmt.step()) {
+                            const uRow = uStmt.getAsObject();
+                            if (uRow && uRow.value) {
+                                const parsedUS = DBManager.parseUserStatusFromTopicB64(String(uRow.value));
+                                if (parsedUS && parsedUS.email) {
+                                    uStmt.free();
+                                    return {
+                                        state: 'authenticated',
+                                        email: parsedUS.email,
+                                        name: parsedUS.name || parsedUS.email.split('@')[0]
+                                    };
+                                }
+                            }
+                        }
+                        uStmt.free();
+                    } catch (e) {}
+
+                    // 2. Check google.google-antigravity (agy.onboarding.lastLoginUsername)
+                    try {
+                        const agStmt = db.prepare("SELECT value FROM ItemTable WHERE key = ?");
+                        agStmt.bind(["google.google-antigravity"]);
+                        if (agStmt.step()) {
+                            const agRow = agStmt.getAsObject();
+                            if (agRow && agRow.value) {
+                                const parsed = JSON.parse(String(agRow.value));
+                                const storage = parsed["antigravity-storage"] || {};
+                                const email = storage["agy.onboarding.lastLoginUsername"];
+                                if (email) {
+                                    agStmt.free();
+                                    return {
+                                        state: 'authenticated',
+                                        email: email,
+                                        name: email.split('@')[0]
+                                    };
+                                }
+                            }
+                        }
+                        agStmt.free();
+                    } catch (e) {}
+
+                    // 3. Check antigravityAuthStatus (Primary IDE session token & status fallback)
                     try {
                         const stmt = db.prepare("SELECT value FROM ItemTable WHERE key = ?");
                         stmt.bind(["antigravityAuthStatus"]);
@@ -603,49 +659,6 @@ export class DBManager {
                         }
                         stmt.free();
                     } catch (e) {}
-
-                    // 2. Check antigravityUnifiedStateSync.userStatus (Primary Protobuf source of truth for Settings UI)
-                    try {
-                        const uStmt = db.prepare("SELECT value FROM ItemTable WHERE key = 'antigravityUnifiedStateSync.userStatus'");
-                        if (uStmt.step()) {
-                            const uRow = uStmt.getAsObject();
-                            if (uRow && uRow.value) {
-                                const parsedUS = DBManager.parseUserStatusFromTopicB64(String(uRow.value));
-                                if (parsedUS && parsedUS.email) {
-                                    uStmt.free();
-                                    return {
-                                        state: 'authenticated',
-                                        email: parsedUS.email,
-                                        name: parsedUS.name || parsedUS.email.split('@')[0]
-                                    };
-                                }
-                            }
-                        }
-                        uStmt.free();
-                    } catch (e) {}
-
-                    // 3. Check google.google-antigravity (agy.onboarding.lastLoginUsername)
-                    try {
-                        const agStmt = db.prepare("SELECT value FROM ItemTable WHERE key = ?");
-                        agStmt.bind(["google.google-antigravity"]);
-                        if (agStmt.step()) {
-                            const agRow = agStmt.getAsObject();
-                            if (agRow && agRow.value) {
-                                const parsed = JSON.parse(String(agRow.value));
-                                const storage = parsed["antigravity-storage"] || {};
-                                const email = storage["agy.onboarding.lastLoginUsername"];
-                                if (email) {
-                                    agStmt.free();
-                                    return {
-                                        state: 'authenticated',
-                                        email: email,
-                                        name: email.split('@')[0]
-                                    };
-                                }
-                            }
-                        }
-                        agStmt.free();
-                    } catch (e) {}
                 } finally {
                     db.close();
                 }
@@ -653,6 +666,33 @@ export class DBManager {
                 console.error('Failed to read auth status from DB', e);
             }
         }
+
+        try {
+            const tokenInfo = await this.readFullTokenInfo(resolvedDbPath);
+            if (tokenInfo && (tokenInfo.refresh_token || tokenInfo.access_token)) {
+                const { ACCOUNTS_INDEX_FILE, ACCOUNTS_DIR } = require('./constants');
+                if (fs.existsSync(ACCOUNTS_INDEX_FILE)) {
+                    const idx = JSON.parse(fs.readFileSync(ACCOUNTS_INDEX_FILE, 'utf8'));
+                    for (const a of (idx.accounts || [])) {
+                        const accFile = path.join(ACCOUNTS_DIR, `${a.id}.json`);
+                        if (fs.existsSync(accFile)) {
+                            const accObj = JSON.parse(fs.readFileSync(accFile, 'utf8'));
+                            if (accObj.token && (
+                                (tokenInfo.refresh_token && accObj.token.refresh_token === tokenInfo.refresh_token) ||
+                                (tokenInfo.access_token && accObj.token.access_token === tokenInfo.access_token)
+                            )) {
+                                return {
+                                    state: 'authenticated',
+                                    email: accObj.email,
+                                    name: accObj.name || accObj.email.split('@')[0],
+                                    apiKey: tokenInfo.access_token
+                                };
+                            }
+                        }
+                    }
+                }
+            }
+        } catch (e) {}
 
         // DO NOT fall back to OS Keyring here. OS Keyring is strictly for Antigravity CLI (agy).
         // Falling back to OS Keyring here would overwrite the IDE account with the CLI account,
