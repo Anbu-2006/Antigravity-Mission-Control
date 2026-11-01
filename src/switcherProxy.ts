@@ -290,7 +290,7 @@ export class SwitcherProxy {
         dbPathOverride?: string,
         exePathOverride?: { win32?: string; darwin?: string; linux?: string },
         processWaitSeconds: number = 10,
-        syncKeyring: boolean = true,
+        syncKeyring: boolean = false,
         workspacePath?: string
     ) {
         const tempDir = os.tmpdir();
@@ -719,7 +719,7 @@ async function injectToken() {
             
             // 4. 清理残留认证与过期配额状态
             staleKeys.forEach(key => {
-                try { db.run("DELETE FROM ItemTable WHERE key = ?\", [key]); } catch(e) {}
+                try { db.run("DELETE FROM ItemTable WHERE key = ?", [key]); } catch(e) {}
             });
 
             // 5. 注入 antigravityUnifiedStateSync.userStatus 确保 Settings UI 和 AI Agent 毫秒级识别新用户身份
@@ -753,7 +753,7 @@ async function injectToken() {
                         }
 
                     } catch (jsonErr) {
-                        valStr = valStr.replace(/"agy\\.onboarding\\.lastLoginUsername":\\s*"[^"]*"/g, '"agy.onboarding.lastLoginUsername":"' + EMAIL + '"');
+                        valStr = valStr.replace(/"agy\.onboarding\.lastLoginUsername":\s*"[^"]*"/g, '"agy.onboarding.lastLoginUsername":"' + EMAIL + '"');
                     }
                     db.run("INSERT OR REPLACE INTO ItemTable (key, value) VALUES ('google.google-antigravity', ?)", [valStr]);
                     log('google.google-antigravity username 更新成功: ' + DB_PATH);
@@ -789,7 +789,7 @@ async function injectToken() {
                 log('antigravityAuthStatus 注入异常: ' + e.message);
             }
 
-            // 9. 更新 ~/.gemini/google_accounts.json (仅当 SYNC_KEYRING 为 true)
+            // 9. CLI credentials and OS Keyring are strictly decoupled (IDE only)
             if (false) { // CLI preserved intact
                 try {
                     const home = process.env.USERPROFILE || process.env.HOME || '';
@@ -1005,7 +1005,7 @@ function startIDE() {
 // === 主流程 ===
 async function main() {
     log('========================================');
-    log('Antigravity Mission Hub 账号切换代理启动 (v1.2.1)');
+    log('Antigravity Mission Hub 账号切换代理启动 (v1.2.2)');
     log('平台: ' + PLATFORM);
     log('主数据库: ' + PRIMARY_DB_PATH);
     log('========================================');
@@ -1069,3 +1069,34 @@ main().catch(e => {
     log('致命错误: ' + e.message);
     process.exit(1);
 });
+`;
+
+        fs.writeFileSync(mainScriptPath, mainScriptContent, 'utf-8');
+
+        if (platform === 'win32') {
+            const vbsPath = path.join(tempDir, `ag_launch_${timestamp}.vbs`);
+            const nodeExeVbs = nodeExe;
+            const scriptPathVbs = mainScriptPath;
+            const vbsContent = `Set WshShell = CreateObject("WScript.Shell")
+Set WshEnv = WshShell.Environment("PROCESS")
+WshEnv("ELECTRON_RUN_AS_NODE") = "1"
+WshShell.Run Chr(34) & "${nodeExeVbs}" & Chr(34) & " " & Chr(34) & "${scriptPathVbs}" & Chr(34), 0, False
+`;
+            fs.writeFileSync(vbsPath, vbsContent, 'utf-8');
+
+            const child = spawn('wscript', [vbsPath], {
+                detached: true,
+                stdio: 'ignore',
+                windowsHide: true
+            });
+            child.unref();
+
+        } else {
+            const shellCmd = `nohup env ELECTRON_RUN_AS_NODE=1 "${nodeExe}" "${mainScriptPath}" > "${logPath}" 2>&1 &`;
+            spawn('sh', ['-c', shellCmd], {
+                detached: true,
+                stdio: 'ignore'
+            }).unref();
+        }
+    }
+}

@@ -163,7 +163,7 @@ function renderTrafficNetwork() {
         color = 'var(--text-muted)'; icon = '○'; pulse = '';
     }
 
-    el.innerHTML = `
+    el.innerHTML = \`
         <div class="sg-status-wrap">
             <div class="sg-orb-wrap">
                 <div class="sg-orb \${pulse}" style="background:\${color};box-shadow:0 0 18px \${color},0 0 6px \${color}"></div>
@@ -174,7 +174,7 @@ function renderTrafficNetwork() {
                 <a class="sg-link" href="https://statusgator.com/services/google-antigravity" target="_blank" title="View full StatusGator report">↗ StatusGator</a>
             </div>
         </div>
-    `;
+    \`;
 
     let gCount = 0, gTotal = 0, aCount = 0, aTotal = 0, isRl = false;
     accounts.forEach(acc => {
@@ -266,17 +266,17 @@ function renderFocusNode() {
     if (isCur) badges += '<span class="live-indicator">ACTIVE</span>';
     let actBtns = '';
     if (!isCur) {
-        actBtns += `<button class="action-btn" title="Activate account in Antigravity IDE (restarts IDE)" onclick="doSwitch('\${acc.id}','\${acc.email}')">ACTIVATE</button>`;
+        actBtns += \`<button class="action-btn" title="Activate account in Antigravity IDE (restarts IDE)" onclick="doSwitch('\${acc.id}','\${acc.email}')">ACTIVATE</button>\`;
     }
     
-    let h = `
+    let h = \`
         <div class="hero-top">
             <div class="hero-info">
                 <div class="hero-name">\${displayName}\${badges}</div>
                 <div class="hero-email">\${acc.email} | \${tier}</div>
             </div>
             <div class="hero-actions">
-                ${actBtns}
+                \${actBtns}
                 <button class="action-btn ghost" onclick="doRefresh('\${acc.id}')">REFRESH</button>
                 <button class="action-btn ghost" onclick="doExportToken('\${acc.id}')">EXPORT</button>
                 <button class="action-btn danger" onclick="doDelete('\${acc.id}','\${acc.email}')">DELETE</button>
@@ -296,7 +296,7 @@ function renderFocusNode() {
                 <div class="stat-lbl">Used</div>
             </div>
         </div>
-    `;
+    \`;
 
     if (panel) panel.innerHTML = h;
 
@@ -364,26 +364,26 @@ function renderFocusNode() {
             const cons = 100 - m.percentage;
             const usedVal = m.used || 0;
             const limitVal = m.limit || 0;
-            const uStr = (usedVal > 0 || limitVal > 0) ? `USAGE: \${usedVal.toLocaleString()} / \${limitVal.toLocaleString()} TOKENS` : `CONSUMED: \${cons}%`;
+            const uStr = (usedVal > 0 || limitVal > 0) ? \`USAGE: \${usedVal.toLocaleString()} / \${limitVal.toLocaleString()} TOKENS\` : \`CONSUMED: \${cons}%\`;
 
-            b += `
+            b += \`
             <div class="m-bar-wrap">
                 <div class="m-bar-top"><span>\${m.displayName}</span><span style="color:\${c}">\${m.percentage}%</span></div>
                 <div class="m-bar-track"><div class="m-bar-fill" style="width:\${m.percentage}%;background:\${c};color:\${c}"></div></div>
                 <div class="m-bar-sub"><span>\${uStr}</span><span>Reset: \${rTime}</span></div>
-            </div>`;
+            </div>\`;
         });
         b += '</div>';
     } else if (isErr) {
         const statusCode = (acc.quota && acc.quota.error_status) ? acc.quota.error_status : (isRl ? 429 : 500);
-        b += `<div style="text-align:center;padding:20px;color:var(--red);font-family:monospace">
+        b += \`<div style="text-align:center;padding:20px;color:var(--red);font-family:monospace">
             <div style="font-size:14px;margin-bottom:5px">[ HTTP \${statusCode} ]</div>
             <div>\${statusCode === 429 ? 'RATE LIMIT DETECTED' : 'TELEMETRY FAILURE'}</div>
             <div style="font-size:10px;margin-top:5px;color:var(--text-muted)">\${acc.quota.error_message || ''}</div>
-            <button class="action-btn ghost" style="margin-top:12px;font-size:10px;padding:4px 12px" onclick="doRefresh('\${acc.id}')">REFRESH TELEMETRY</button>
-        </div>`;
+            <button class="action-btn ghost" style="margin-top:12px;font-size:10px;padding:4px 12px" onclick="doRefresh(\'\${acc.id}\')">REFRESH TELEMETRY</button>
+        </div>\`;
     } else {
-        b += `<div style="text-align:center;padding:20px;color:var(--text-muted);font-family:monospace">AWAITING TELEMETRY DATA...</div>`;
+        b += \`<div style="text-align:center;padding:20px;color:var(--text-muted);font-family:monospace">AWAITING TELEMETRY DATA...</div>\`;
     }
     if (bdown) bdown.innerHTML = b;
 }
@@ -403,9 +403,9 @@ function renderFleetGrid() {
         const c = isErr ? 'var(--red)' : pctColor(p);
         const name = acc.name || acc.email.split('@')[0];
 
-        h += `
+        h += \`
         <div class="t-node-v \${isSel ? 'active' : ''}" onclick="selectNode('\${acc.id}')">
-            \${isCur ? `<div class="t-indicator" style="background:var(--green);box-shadow:0 0 5px var(--green)"></div>` : ''}
+            \${isCur ? \`<div class="t-indicator" style="background:var(--green);box-shadow:0 0 5px var(--green)"></div>\` : ''}
             <div class="t-ring" style="border-color:\${c};color:\${c}">\${isErr ? '!' : p}</div>
             <div class="t-info">
                 <div class="t-name">\${name}</div>
@@ -414,7 +414,7 @@ function renderFleetGrid() {
                     \${isCur ? '<span class="t-badge t-badge-ide">ACTIVE</span>' : ''}
                 </div>
             </div>
-        </div>`;
+        </div>\`;
     });
     grid.innerHTML = h;
 }
@@ -463,14 +463,14 @@ function openAllModels() {
         const cons = 100 - m.percentage;
         const usedVal = m.used || 0;
         const limitVal = m.limit || 0;
-        const uStr = (usedVal > 0 || limitVal > 0) ? `\${usedVal.toLocaleString()} / \${limitVal.toLocaleString()} tokens` : `\${cons}% used`;
+        const uStr = (usedVal > 0 || limitVal > 0) ? \`\${usedVal.toLocaleString()} / \${limitVal.toLocaleString()} tokens\` : \`\${cons}% used\`;
 
-        html += `
+        html += \`
         <div class="m-bar-wrap" style="margin-bottom:12px; border-bottom:1px solid rgba(255,255,255,0.1); padding-bottom:8px;">
             <div class="m-bar-top"><span>\${getDisplayName(m.name)}</span><span style="color:\${c}">\${m.percentage}%</span></div>
             <div class="m-bar-track"><div class="m-bar-fill" style="width:\${m.percentage}%;background:\${c};color:\${c}"></div></div>
             <div class="m-bar-sub"><span>\${uStr}</span><span>Reset: \${rTime}</span></div>
-        </div>`;
+        </div>\`;
     });
     
     document.getElementById('allModelsList').innerHTML = html;

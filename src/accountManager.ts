@@ -54,6 +54,7 @@ export class AccountManager {
         if (fs.existsSync(ACCOUNTS_INDEX_FILE)) {
             try {
                 index = JSON.parse(fs.readFileSync(ACCOUNTS_INDEX_FILE, 'utf8'));
+                delete (index as any).current_cli_account_id;
             } catch (e) {
                 console.error('[Cockpit] Failed to load account index, will rebuild from disk', e);
             }

@@ -164,16 +164,6 @@ temp/
             const authStatus = await DBManager.readAuthStatus(dbPath);
             const index = AccountManager.loadIndex();
 
-            // 同步 CLI 活动账号
-            const cliEmail: string | null = null;
-            if (cliEmail) {
-                const cliMatch = index.accounts.find(a => a.email.toLowerCase() === cliEmail.toLowerCase());
-                if (cliMatch && index.current_cli_account_id !== cliMatch.id) {
-                    index.current_cli_account_id = cliMatch.id;
-                    AccountManager.saveIndex(index);
-                }
-            }
-
             if (authStatus.state === 'logged_out') {
                 return false;
             }
@@ -962,58 +952,6 @@ temp/
     let switchAccountCommand = vscode.commands.registerCommand('antigravity-mission-hub.switchAccount', async (item: any) => {
         const accountId = typeof item === 'string' ? item : (item?.accountId || item?.id);
         if (!accountId) { return; }
-        const target: 'ide' | 'cli' | 'both' = (item && item.target) ? item.target : 'ide';
-
-        if (false && (target as any) === 'cli') {
-            await vscode.window.withProgress({
-                location: vscode.ProgressLocation.Notification,
-                title: 'Switching Antigravity CLI Account...',
-                cancellable: false
-            }, async (progress) => {
-                try {
-                    progress.report({ message: t('loadingAccountInfo') });
-                    const account = AccountManager.loadAccount(accountId);
-                    if (!account.token) {
-                        throw new Error(vscode.env.language.startsWith('zh') ? '该账号暂无 Token' : 'The account has no Token');
-                    }
-                    let token = account.token;
-                    if (Date.now() / 1000 > token.expiry_timestamp - 300) {
-                        progress.report({ message: t('refreshingToken') });
-                        const refreshed = await AccountManager.refreshToken(token.refresh_token);
-                        token.access_token = refreshed.accessToken;
-                        token.expiry_timestamp = Math.floor(Date.now() / 1000) + refreshed.expiresIn;
-                        account.token = token;
-                        AccountManager.saveAccount(account);
-                    }
-
-                    progress.report({ message: 'Synchronizing OS Keyring & CLI config...' });
-                    KeyringManager.setAntigravityCredentials(
-                        token.access_token,
-                        cleanRefreshToken(token.refresh_token),
-                        account.email,
-                        token.expiry_timestamp
-                    );
-
-                    account.last_used = Date.now();
-                    AccountManager.saveAccount(account);
-
-                    const index = AccountManager.loadIndex();
-                    index.current_cli_account_id = accountId;
-                    AccountManager.saveIndex(index);
-
-                    accountTreeProvider.refresh();
-                    DashboardProvider.refresh();
-                    updateStatusBar();
-
-                    vscode.window.showInformationMessage(
-                        `💻 Antigravity CLI (agy) active account switched to: ${account.email}`
-                    );
-                } catch (e: any) {
-                    vscode.window.showErrorMessage(`CLI switch failed: ${e.message}`);
-                }
-            });
-            return;
-        }
 
         const config = vscode.workspace.getConfiguration('antigravity-mission-hub');
         const switchMode = config.get<string>('switchMode', 'advanced');
@@ -1207,7 +1145,7 @@ temp/
         if (!accountId) {
             const index = AccountManager.loadIndex();
             const picks = index.accounts.map(a => ({ label: a.name || a.email.split('@')[0], description: a.email, id: a.id }));
-            const sel = await vscode.window.showQuickPick(picks, { placeHolder: 'Select account for Antigravity CLI (agy)' });
+            const sel = await vscode.window.showQuickPick(picks, { placeHolder: 'Select account for Antigravity IDE' });
             if (!sel) return;
             accountId = sel.id;
         }
@@ -1233,7 +1171,7 @@ temp/
         if (!accountId) {
             const index = AccountManager.loadIndex();
             const picks = index.accounts.map(a => ({ label: a.name || a.email.split('@')[0], description: a.email, id: a.id }));
-            const sel = await vscode.window.showQuickPick(picks, { placeHolder: 'Select account for both IDE and CLI' });
+            const sel = await vscode.window.showQuickPick(picks, { placeHolder: 'Select account for Antigravity IDE' });
             if (!sel) return;
             accountId = sel.id;
         }
@@ -1263,7 +1201,22 @@ temp/
                 }
                 AccountManager.clearQuotaCache(oldAccessToken);
                 AccountManager.clearQuotaCache(account.token.access_token);
-                await AccountManager.fetchQuotaCached(account.token.access_token, null, true);
+                try {
+                    await AccountManager.fetchQuotaCached(account.token.access_token, null, true);
+                } catch (fetchErr: any) {
+                    if (fetchErr.response && fetchErr.response.status === 401 && account.token.refresh_token) {
+                        const refreshed = await AccountManager.refreshToken(account.token.refresh_token);
+                        account.token.access_token = refreshed.accessToken;
+                        account.token.expiry_timestamp = Math.floor(Date.now() / 1000) + refreshed.expiresIn;
+                        account.last_used = Date.now();
+                        AccountManager.saveAccount(account);
+                        AccountManager.clearQuotaCache(oldAccessToken);
+                        AccountManager.clearQuotaCache(account.token.access_token);
+                        await AccountManager.fetchQuotaCached(account.token.access_token, null, true);
+                    } else {
+                        throw fetchErr;
+                    }
+                }
                 accountTreeProvider.refresh();
                 DashboardProvider.refresh();
                 updateStatusBar();
@@ -1333,7 +1286,21 @@ temp/
                             AccountManager.saveAccount(account);
                         }
                         await new Promise(r => setTimeout(r, 300 + Math.random() * 400));
-                        await AccountManager.fetchQuotaCached(account.token.access_token);
+                        try {
+                            await AccountManager.fetchQuotaCached(account.token.access_token);
+                        } catch (qErr: any) {
+                            if (qErr.response && qErr.response.status === 401 && account.token.refresh_token) {
+                                const refreshed = await AccountManager.refreshToken(account.token.refresh_token);
+                                account.token.access_token = refreshed.accessToken;
+                                account.token.expiry_timestamp = Math.floor(Date.now() / 1000) + refreshed.expiresIn;
+                                account.last_used = Date.now();
+                                AccountManager.saveAccount(account);
+                                AccountManager.clearQuotaCache(account.token.access_token);
+                                await AccountManager.fetchQuotaCached(account.token.access_token);
+                            } else {
+                                throw qErr;
+                            }
+                        }
                     }
                     
                     DashboardProvider.postUpdate();
@@ -1486,13 +1453,13 @@ temp/
         let downloadUrl: string;
 
         if (platform === 'darwin') {
-            instructions = 'macOS detected. You can install Node.js via:\n\n1. Homebrew: brew install node\n2. Official installer: https://nodejs.org\n3. nvm: curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.40.1/install.sh | bash && nvm install --lts';
+            instructions = 'macOS detected. You can install Node.js via:\\n\\n1. Homebrew: brew install node\\n2. Official installer: https://nodejs.org\\n3. nvm: curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.40.1/install.sh | bash && nvm install --lts';
             downloadUrl = 'https://nodejs.org/en/download/';
         } else if (platform === 'win32') {
-            instructions = 'Windows detected. You can install Node.js via:\n\n1. Official installer: https://nodejs.org\n2. winget: winget install OpenJS.NodeJS.LTS\n3. Chocolatey: choco install nodejs-lts\n4. Scoop: scoop install nodejs-lts';
+            instructions = 'Windows detected. You can install Node.js via:\\n\\n1. Official installer: https://nodejs.org\\n2. winget: winget install OpenJS.NodeJS.LTS\\n3. Chocolatey: choco install nodejs-lts\\n4. Scoop: scoop install nodejs-lts';
             downloadUrl = 'https://nodejs.org/en/download/';
         } else {
-            instructions = 'Linux detected. You can install Node.js via:\n\n1. Package manager: apt install nodejs / dnf install nodejs\n2. nvm: curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.40.1/install.sh | bash && nvm install --lts\n3. Official: https://nodejs.org';
+            instructions = 'Linux detected. You can install Node.js via:\\n\\n1. Package manager: apt install nodejs / dnf install nodejs\\n2. nvm: curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.40.1/install.sh | bash && nvm install --lts\\n3. Official: https://nodejs.org';
             downloadUrl = 'https://nodejs.org/en/download/';
         }
 
@@ -1718,7 +1685,7 @@ temp/
             if (platform === 'win32') {
                 try {
                     const result = execSync('where node', { encoding: 'utf-8', windowsHide: true });
-                    const lines = result.trim().split('\n');
+                    const lines = result.trim().split('\\n');
                     if (lines.length > 0 && fs.existsSync(lines[0].trim())) {
                         nodePath = lines[0].trim();
                         nodeStatus = t('statusFound');
@@ -1845,7 +1812,7 @@ temp/
                     }
 
                     const authStatus = await DBManager.readAuthStatus(actualDbPath);
-                    results.push(`\nAuth Status: state=${authStatus.state}, email=${authStatus.email || '(none)'}`);
+                    results.push(`\\nAuth Status: state=${authStatus.state}, email=${authStatus.email || '(none)'}`);
 
                     const tokenInfo = await DBManager.readFullTokenInfo(actualDbPath);
                     results.push(`Token Info: ${tokenInfo ? '✅ Found (access_token: ' + tokenInfo.access_token.substring(0, 10) + '...)' : '❌ Not Found'}`);
@@ -1861,7 +1828,7 @@ temp/
         }
         results.push('');
 
-        const report = results.join('\n');
+        const report = results.join('\\n');
         const doc = await vscode.workspace.openTextDocument({
             content: report,
             language: 'markdown'
@@ -2014,10 +1981,10 @@ temp/
         AccountManager.clearQuotaCache();
         AccountManager.clearBackoffState();
 
-        try {
-        const workspaceFolders = vscode.workspace.workspaceFolders;
         let cleanedCount = 0;
         let gitFixed = false;
+        try {
+        const workspaceFolders = vscode.workspace.workspaceFolders;
 
         if (workspaceFolders && workspaceFolders.length > 0) {
             for (const folder of workspaceFolders) {
@@ -2059,6 +2026,9 @@ temp/
                     }
                 } catch (gitErr) {}
             }
+        }
+        } catch (wsErr) {
+            console.error("[Safe Clean] Workspace cleanup failed:", wsErr);
         }
 
         DashboardProvider.refresh();

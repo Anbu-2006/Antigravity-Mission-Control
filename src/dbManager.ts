@@ -199,8 +199,6 @@ export class DBManager {
                     console.error('Failed to inject antigravityAuthStatus', e);
                 }
 
-                // 9. OS Keyring & CLI credentials untouched (pure IDE separation)
-
                 // 写回磁盘
                 this.saveDb(db, resolvedDbPath);
             } finally {
@@ -655,13 +653,15 @@ export class DBManager {
             }
         } catch (e) {}
 
-        // Pure IDE separation: OS Keyring is never accessed here
+        // DO NOT fall back to OS Keyring here. OS Keyring is strictly for Antigravity CLI (agy).
+        // Falling back to OS Keyring here would overwrite the IDE account with the CLI account,
+        // violating independent account separation.
         return { state: 'missing' };
     }
 
     /**
      * Reads the active Antigravity CLI (agy) authentication status.
-     * Decoupled in v1.2.2.
+     * Supreme source of truth for CLI is OS Keyring & ~/.gemini/google_accounts.json.
      */
     static readCLIAuthStatus(): {
         state: 'authenticated' | 'missing';

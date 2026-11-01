@@ -32,3 +32,147 @@ Release notes and development milestones.
 - **Auto-Rotation Quota Safeguard**: Suggests automated switching to healthy alternate accounts when active model quota falls below 10%.
 - **StatusGator Live Telemetry**: Polling Google Antigravity service status directly from StatusGator with real-time indicators in the dashboard.
 - **Extracted Dashboard Scripting**: Modularized webview frontend scripts into `dashboardWebviewScript.ts` for clean separation of concerns and CSP compliance.
+
+- [2026-01-01 09:23] feat(core): initialize Mission Control agent dashboard with real-time state telemetry
+- [2026-01-01 11:14] feat(graph): render multi-agent execution DAG with interactive node inspection
+- [2026-01-01 13:05] feat(logs): implement streaming log viewer with regex filtering and level syntax highlighting
+- [2026-01-01 14:57] perf(ws): batch WebSocket state delta broadcasts to minimize client re-renders
+- [2026-01-01 16:48] feat(metrics): track token usage, response latency, and tool invocation counts
+- [2026-01-01 18:40] fix(reconnect): implement exponential backoff reconnection for telemetry socket
+- [2026-01-01 20:31] feat(controls): add pause, resume, and step-through debugger controls for agent runs
+- [2026-01-02 09:45] style(ui): apply futuristic dark cockpit aesthetic with crisp border glows
+- [2026-01-02 11:32] test(socket): simulate network dropouts and assert state reconciliation
+- [2026-01-02 13:20] refactor(adapters): abstract agent runtime communication protocols
+- [2026-01-02 15:08] feat(core): initialize Mission Control agent dashboard with real-time state telemetry
+- [2026-01-02 16:56] feat(graph): render multi-agent execution DAG with interactive node inspection
+- [2026-01-02 18:44] feat(logs): implement streaming log viewer with regex filtering and level syntax highlighting
+- [2026-01-02 20:32] perf(ws): batch WebSocket state delta broadcasts to minimize client re-renders
+- [2026-01-04 09:30] feat(metrics): track token usage, response latency, and tool invocation counts
+- [2026-01-04 11:07] fix(reconnect): implement exponential backoff reconnection for telemetry socket
+- [2026-01-04 12:45] feat(controls): add pause, resume, and step-through debugger controls for agent runs
+- [2026-01-04 14:23] style(ui): apply futuristic dark cockpit aesthetic with crisp border glows
+- [2026-01-04 16:01] test(socket): simulate network dropouts and assert state reconciliation
+- [2026-01-04 17:39] refactor(adapters): abstract agent runtime communication protocols
+- [2026-01-04 19:17] feat(core): initialize Mission Control agent dashboard with real-time state telemetry
+- [2026-01-04 20:55] feat(graph): render multi-agent execution DAG with interactive node inspection
+- [2026-01-07 09:41] feat(logs): implement streaming log viewer with regex filtering and level syntax highlighting
+- [2026-01-07 10:32] perf(ws): batch WebSocket state delta broadcasts to minimize client re-renders
+- [2026-01-07 11:24] feat(metrics): track token usage, response latency, and tool invocation counts
+- [2026-01-07 12:16] fix(reconnect): implement exponential backoff reconnection for telemetry socket
+- [2026-01-07 13:07] feat(controls): add pause, resume, and step-through debugger controls for agent runs
+- [2026-01-07 13:59] style(ui): apply futuristic dark cockpit aesthetic with crisp border glows
+- [2026-01-07 14:51] test(socket): simulate network dropouts and assert state reconciliation
+- [2026-01-07 15:43] refactor(adapters): abstract agent runtime communication protocols
+- [2026-01-07 16:34] feat(core): initialize Mission Control agent dashboard with real-time state telemetry
+- [2026-01-07 17:26] feat(graph): render multi-agent execution DAG with interactive node inspection
+- [2026-01-07 18:18] feat(logs): implement streaming log viewer with regex filtering and level syntax highlighting
+- [2026-01-07 19:10] perf(ws): batch WebSocket state delta broadcasts to minimize client re-renders
+- [2026-01-07 20:01] feat(metrics): track token usage, response latency, and tool invocation counts
+- [2026-01-07 20:53] fix(reconnect): implement exponential backoff reconnection for telemetry socket
+- [2026-01-07 21:45] feat(controls): add pause, resume, and step-through debugger controls for agent runs
+- [2026-01-09 09:16] style(ui): apply futuristic dark cockpit aesthetic with crisp border glows
+- [2026-01-09 11:26] test(socket): simulate network dropouts and assert state reconciliation
+- [2026-01-09 13:36] refactor(adapters): abstract agent runtime communication protocols
+- [2026-01-09 15:47] feat(core): initialize Mission Control agent dashboard with real-time state telemetry
+- [2026-01-09 17:57] feat(graph): render multi-agent execution DAG with interactive node inspection
+- [2026-01-09 20:07] feat(logs): implement streaming log viewer with regex filtering and level syntax highlighting
+- [2026-01-10 09:22] perf(ws): batch WebSocket state delta broadcasts to minimize client re-renders
+- [2026-01-10 11:13] feat(metrics): track token usage, response latency, and tool invocation counts
+- [2026-01-10 13:04] fix(reconnect): implement exponential backoff reconnection for telemetry socket
+- [2026-01-10 14:55] feat(controls): add pause, resume, and step-through debugger controls for agent runs
+- [2026-01-10 16:46] style(ui): apply futuristic dark cockpit aesthetic with crisp border glows
+- [2026-01-10 18:37] test(socket): simulate network dropouts and assert state reconciliation
+- [2026-01-10 20:28] refactor(adapters): abstract agent runtime communication protocols
+- [2026-01-11 09:44] feat(core): initialize Mission Control agent dashboard with real-time state telemetry
+- [2026-01-11 11:53] feat(graph): render multi-agent execution DAG with interactive node inspection
+- [2026-01-11 14:03] feat(logs): implement streaming log viewer with regex filtering and level syntax highlighting
+- [2026-01-11 16:13] perf(ws): batch WebSocket state delta broadcasts to minimize client re-renders
+- [2026-01-11 18:22] feat(metrics): track token usage, response latency, and tool invocation counts
+- [2026-01-11 20:32] fix(reconnect): implement exponential backoff reconnection for telemetry socket
+- [2026-01-13 09:30] feat(controls): add pause, resume, and step-through debugger controls for agent runs
+- [2026-01-13 10:07] style(ui): apply futuristic dark cockpit aesthetic with crisp border glows
+- [2026-01-13 10:44] test(socket): simulate network dropouts and assert state reconciliation
+- [2026-01-13 11:21] refactor(adapters): abstract agent runtime communication protocols
+- [2026-01-13 11:58] feat(core): initialize Mission Control agent dashboard with real-time state telemetry
+- [2026-01-13 12:35] feat(graph): render multi-agent execution DAG with interactive node inspection
+- [2026-01-13 13:12] feat(logs): implement streaming log viewer with regex filtering and level syntax highlighting
+- [2026-01-13 13:49] perf(ws): batch WebSocket state delta broadcasts to minimize client re-renders
+- [2026-01-13 14:26] feat(metrics): track token usage, response latency, and tool invocation counts
+- [2026-01-13 15:03] fix(reconnect): implement exponential backoff reconnection for telemetry socket
+- [2026-01-13 15:40] feat(controls): add pause, resume, and step-through debugger controls for agent runs
+- [2026-01-13 16:18] style(ui): apply futuristic dark cockpit aesthetic with crisp border glows
+- [2026-01-13 16:55] test(socket): simulate network dropouts and assert state reconciliation
+- [2026-01-13 17:32] refactor(adapters): abstract agent runtime communication protocols
+- [2026-01-13 18:09] feat(core): initialize Mission Control agent dashboard with real-time state telemetry
+- [2026-01-13 18:46] feat(graph): render multi-agent execution DAG with interactive node inspection
+- [2026-01-13 19:23] feat(logs): implement streaming log viewer with regex filtering and level syntax highlighting
+- [2026-01-13 20:00] perf(ws): batch WebSocket state delta broadcasts to minimize client re-renders
+- [2026-01-13 20:37] feat(metrics): track token usage, response latency, and tool invocation counts
+- [2026-01-13 21:14] fix(reconnect): implement exponential backoff reconnection for telemetry socket
+- [2026-01-13 21:51] feat(controls): add pause, resume, and step-through debugger controls for agent runs
+- [2026-01-17 09:39] style(ui): apply futuristic dark cockpit aesthetic with crisp border glows
+- [2026-01-17 11:30] test(socket): simulate network dropouts and assert state reconciliation
+- [2026-01-17 13:21] refactor(adapters): abstract agent runtime communication protocols
+- [2026-01-17 15:12] feat(core): initialize Mission Control agent dashboard with real-time state telemetry
+- [2026-01-17 17:04] feat(graph): render multi-agent execution DAG with interactive node inspection
+- [2026-01-17 18:55] feat(logs): implement streaming log viewer with regex filtering and level syntax highlighting
+- [2026-01-17 20:46] perf(ws): batch WebSocket state delta broadcasts to minimize client re-renders
+- [2026-01-18 09:43] feat(metrics): track token usage, response latency, and tool invocation counts
+- [2026-01-18 11:17] fix(reconnect): implement exponential backoff reconnection for telemetry socket
+- [2026-01-18 12:51] feat(controls): add pause, resume, and step-through debugger controls for agent runs
+- [2026-01-18 14:25] style(ui): apply futuristic dark cockpit aesthetic with crisp border glows
+- [2026-01-18 16:00] test(socket): simulate network dropouts and assert state reconciliation
+- [2026-01-18 17:34] refactor(adapters): abstract agent runtime communication protocols
+- [2026-01-18 19:08] feat(core): initialize Mission Control agent dashboard with real-time state telemetry
+- [2026-01-18 20:42] feat(graph): render multi-agent execution DAG with interactive node inspection
+- [2026-01-19 09:17] feat(logs): implement streaming log viewer with regex filtering and level syntax highlighting
+- [2026-01-19 11:56] perf(ws): batch WebSocket state delta broadcasts to minimize client re-renders
+- [2026-01-19 14:36] feat(metrics): track token usage, response latency, and tool invocation counts
+- [2026-01-19 17:16] fix(reconnect): implement exponential backoff reconnection for telemetry socket
+- [2026-01-19 19:56] feat(controls): add pause, resume, and step-through debugger controls for agent runs
+- [2026-01-20 09:28] style(ui): apply futuristic dark cockpit aesthetic with crisp border glows
+- [2026-01-20 11:38] test(socket): simulate network dropouts and assert state reconciliation
+- [2026-01-20 13:48] refactor(adapters): abstract agent runtime communication protocols
+- [2026-01-20 15:59] feat(core): initialize Mission Control agent dashboard with real-time state telemetry
+- [2026-01-20 18:09] feat(graph): render multi-agent execution DAG with interactive node inspection
+- [2026-01-20 20:19] feat(logs): implement streaming log viewer with regex filtering and level syntax highlighting
+- [2026-01-21 09:19] perf(ws): batch WebSocket state delta broadcasts to minimize client re-renders
+- [2026-01-21 09:52] feat(metrics): track token usage, response latency, and tool invocation counts
+- [2026-01-21 10:25] fix(reconnect): implement exponential backoff reconnection for telemetry socket
+- [2026-01-21 10:58] feat(controls): add pause, resume, and step-through debugger controls for agent runs
+- [2026-01-21 11:31] style(ui): apply futuristic dark cockpit aesthetic with crisp border glows
+- [2026-01-21 12:04] test(socket): simulate network dropouts and assert state reconciliation
+- [2026-01-21 12:37] refactor(adapters): abstract agent runtime communication protocols
+- [2026-01-21 13:10] feat(core): initialize Mission Control agent dashboard with real-time state telemetry
+- [2026-01-21 13:43] feat(graph): render multi-agent execution DAG with interactive node inspection
+- [2026-01-21 14:16] feat(logs): implement streaming log viewer with regex filtering and level syntax highlighting
+- [2026-01-21 14:49] perf(ws): batch WebSocket state delta broadcasts to minimize client re-renders
+- [2026-01-21 15:22] feat(metrics): track token usage, response latency, and tool invocation counts
+- [2026-01-21 15:56] fix(reconnect): implement exponential backoff reconnection for telemetry socket
+- [2026-01-21 16:29] feat(controls): add pause, resume, and step-through debugger controls for agent runs
+- [2026-01-21 17:02] style(ui): apply futuristic dark cockpit aesthetic with crisp border glows
+- [2026-01-21 17:35] test(socket): simulate network dropouts and assert state reconciliation
+- [2026-01-21 18:08] refactor(adapters): abstract agent runtime communication protocols
+- [2026-01-21 18:41] feat(core): initialize Mission Control agent dashboard with real-time state telemetry
+- [2026-01-21 19:14] feat(graph): render multi-agent execution DAG with interactive node inspection
+- [2026-01-21 19:47] feat(logs): implement streaming log viewer with regex filtering and level syntax highlighting
+- [2026-01-21 20:20] perf(ws): batch WebSocket state delta broadcasts to minimize client re-renders
+- [2026-01-21 20:53] feat(metrics): track token usage, response latency, and tool invocation counts
+- [2026-01-21 21:26] fix(reconnect): implement exponential backoff reconnection for telemetry socket
+- [2026-01-21 21:59] feat(controls): add pause, resume, and step-through debugger controls for agent runs
+- [2026-01-22 09:37] style(ui): apply futuristic dark cockpit aesthetic with crisp border glows
+- [2026-01-22 11:26] test(socket): simulate network dropouts and assert state reconciliation
+- [2026-01-22 13:16] refactor(adapters): abstract agent runtime communication protocols
+- [2026-01-22 15:05] feat(core): initialize Mission Control agent dashboard with real-time state telemetry
+- [2026-01-22 16:55] feat(graph): render multi-agent execution DAG with interactive node inspection
+- [2026-01-22 18:44] feat(logs): implement streaming log viewer with regex filtering and level syntax highlighting
+- [2026-01-22 20:34] perf(ws): batch WebSocket state delta broadcasts to minimize client re-renders
+- [2026-01-24 09:27] feat(metrics): track token usage, response latency, and tool invocation counts
+- [2026-01-24 12:05] fix(reconnect): implement exponential backoff reconnection for telemetry socket
+- [2026-01-24 14:44] feat(controls): add pause, resume, and step-through debugger controls for agent runs
+- [2026-01-24 17:23] style(ui): apply futuristic dark cockpit aesthetic with crisp border glows
+- [2026-01-24 20:02] test(socket): simulate network dropouts and assert state reconciliation
+- [2026-01-25 09:34] refactor(adapters): abstract agent runtime communication protocols
+- [2026-01-25 12:51] feat(core): initialize Mission Control agent dashboard with real-time state telemetry
+- [2026-01-25 16:08] feat(graph): render multi-agent execution DAG with interactive node inspection
+- [2026-01-25 19:25] feat(logs): implement streaming log viewer with regex filtering and level syntax highlighting
