@@ -1,7 +1,6 @@
 import * as vscode from 'vscode';
 import { AccountManager, Account } from './accountManager';
 import { DBManager } from './dbManager';
-import { KeyringManager } from './keyringManager';
 import { ModelGroupManager, ModelGroup, ModelGroupsConfig, ModelInfo } from './modelGroupManager';
 import { t, getTranslations } from './i18n';
 import { getDashboardJsTemplate } from './dashboardWebviewScript';
@@ -115,7 +114,18 @@ export class DashboardProvider {
                                                 tokenRefreshed = true;
                                             } catch (reErr) {}
                                         }
-                                        await AccountManager.fetchQuotaCached(acc.token.access_token, null, tokenRefreshed);
+                                        try {
+                                            await AccountManager.fetchQuotaCached(acc.token.access_token, null, tokenRefreshed);
+                                        } catch (fErr: any) {
+                                            if (fErr.response && fErr.response.status === 401 && acc.token.refresh_token) {
+                                                const refreshed = await AccountManager.refreshToken(acc.token.refresh_token);
+                                                acc.token.access_token = refreshed.accessToken;
+                                                acc.token.expiry_timestamp = Math.floor(Date.now() / 1000) + refreshed.expiresIn;
+                                                AccountManager.saveAccount(acc);
+                                                AccountManager.clearQuotaCache(acc.token.access_token);
+                                                await AccountManager.fetchQuotaCached(acc.token.access_token, null, true);
+                                            }
+                                        }
                                         this._postState();
                                     }
                                 } catch (e) {}
@@ -444,8 +454,15 @@ export class DashboardProvider {
                             }
                             quota = await AccountManager.fetchQuotaCached(fullAcc.token.access_token);
                         } catch (e: any) {
-                            if (e.response && e.response.status === 401) {
-                                vscode.commands.executeCommand('antigravity-mission-hub.refreshStatusBar');
+                            if (e.response && e.response.status === 401 && fullAcc.token.refresh_token) {
+                                try {
+                                    const refreshed = await AccountManager.refreshToken(fullAcc.token.refresh_token);
+                                    fullAcc.token.access_token = refreshed.accessToken;
+                                    fullAcc.token.expiry_timestamp = Math.floor(Date.now() / 1000) + refreshed.expiresIn;
+                                    AccountManager.saveAccount(fullAcc);
+                                    AccountManager.clearQuotaCache(fullAcc.token.access_token);
+                                    quota = await AccountManager.fetchQuotaCached(fullAcc.token.access_token, null, true);
+                                } catch (rfErr) {}
                             }
                         }
                     } else {
@@ -498,7 +515,6 @@ export class DashboardProvider {
     private _getHtmlForWebview(accountsData: any[], groupsConfig: any, uiState: any = {}, ideEmail: string | null = null) {
         const config = vscode.workspace.getConfiguration('antigravity-mission-hub');
         const autoRefreshInterval = config.get<number>('autoRefreshInterval', 5);
-
         const accountsJson = JSON.stringify(accountsData);
         const groupsJson = JSON.stringify(groupsConfig);
         const translationsJson = JSON.stringify(getTranslations());
