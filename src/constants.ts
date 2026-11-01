@@ -10,15 +10,15 @@ export const CLIENT_SECRET = process.env.GOOGLE_CLIENT_SECRET || String.fromChar
 export const TOKEN_URL = "https://oauth2.googleapis.com/token";
 
 export const QUOTA_API_ENDPOINTS = [
-    "https://cloudcode-pa.googleapis.com/v1internal:fetchAvailableModels",
-    "https://daily-cloudcode-pa.googleapis.com/v1internal:fetchAvailableModels",
-    "https://daily-cloudcode-pa.sandbox.googleapis.com/v1internal:fetchAvailableModels"
+    "https://cloudcode-pa.googleapis.com/v1internal:fetchAvailableModels"
+
+
 ];
 
 export const LOAD_CODE_ASSIST_ENDPOINTS = [
-    "https://cloudcode-pa.googleapis.com/v1internal:loadCodeAssist",
-    "https://daily-cloudcode-pa.googleapis.com/v1internal:loadCodeAssist",
-    "https://daily-cloudcode-pa.sandbox.googleapis.com/v1internal:loadCodeAssist"
+    "https://cloudcode-pa.googleapis.com/v1internal:loadCodeAssist"
+
+
 ];
 
 export const QUOTA_API_URL = QUOTA_API_ENDPOINTS[0];
