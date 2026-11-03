@@ -69,8 +69,8 @@ jobs:
         if: startsWith(github.ref, 'refs/tags/') || github.ref == 'refs/heads/main'
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: v1.2.2
-          name: "Release v1.2.2: Pure Antigravity IDE Multi-Account Controller"
+          tag_name: ${{ github.ref_name }}
+          name: "Release ${{ github.ref_name }}: Pure Antigravity IDE Multi-Account Controller"
           body_path: ovsx.log
           files: "*.vsix"
           overwrite_files: true
