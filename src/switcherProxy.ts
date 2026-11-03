@@ -382,7 +382,7 @@ function killAllAntigravity() {
     log('正在强制关闭所有 Antigravity 进程与 language_server...');
     try {
         if (PLATFORM === 'win32') {
-            const targets = ['language_server.exe', 'Antigravity IDE.exe', 'Antigravity.exe'];
+            const targets = ['agy.exe', 'language_server.exe', 'Antigravity IDE.exe', 'Antigravity.exe'];
             for (const tgt of targets) {
                 try {
                     execSync('taskkill /F /IM "' + tgt + '" /T 2>nul', { 
@@ -393,13 +393,14 @@ function killAllAntigravity() {
                     });
                 } catch (e) {}
             }
-            log('taskkill 命令已执行 (含 language_server.exe, 不含外部 agy.exe)');
+            log('taskkill 命令已执行 (含 agy.exe 及 language_server.exe)');
         } else {
             try {
-                                execSync('pkill -9 -i language_server || true', { encoding: 'utf-8' });
+                execSync('pkill -9 -i agy || true', { encoding: 'utf-8' });
+                execSync('pkill -9 -i language_server || true', { encoding: 'utf-8' });
                 execSync('pkill -9 -i "antigravity ide" || true', { encoding: 'utf-8' });
                 execSync('pkill -9 -i antigravity || true', { encoding: 'utf-8' });
-                log('pkill 命令已执行 (含 language_server)');
+                log('pkill 命令已执行 (含 agy 及 language_server)');
             } catch (e) {
                 log('pkill 完成: ' + (e.message || ''));
             }
@@ -747,16 +748,24 @@ async function injectToken() {
                     let valStr = String(ggaStmt.getAsObject().value);
                     try {
                         const parsed = JSON.parse(valStr);
-                        if (parsed && parsed['antigravity-storage']) {
-                            parsed['antigravity-storage']['agy.onboarding.lastLoginUsername'] = EMAIL;
-                            valStr = JSON.stringify(parsed);
+                        if (!parsed['antigravity-storage']) {
+                            parsed['antigravity-storage'] = {};
                         }
-
+                        parsed['antigravity-storage']['agy.onboarding.lastLoginUsername'] = EMAIL;
+                        valStr = JSON.stringify(parsed);
                     } catch (jsonErr) {
                         valStr = valStr.replace(/"agy\.onboarding\.lastLoginUsername":\s*"[^"]*"/g, '"agy.onboarding.lastLoginUsername":"' + EMAIL + '"');
                     }
                     db.run("INSERT OR REPLACE INTO ItemTable (key, value) VALUES ('google.google-antigravity', ?)", [valStr]);
                     log('google.google-antigravity username 更新成功: ' + DB_PATH);
+                } else {
+                    const initGga = JSON.stringify({
+                        'antigravity-storage': {
+                            'agy.onboarding.lastLoginUsername': EMAIL
+                        }
+                    });
+                    db.run("INSERT OR REPLACE INTO ItemTable (key, value) VALUES ('google.google-antigravity', ?)", [initGga]);
+                    log('google.google-antigravity 初始插入成功: ' + DB_PATH);
                 }
                 ggaStmt.free();
             } catch (e) {
@@ -808,13 +817,13 @@ async function injectToken() {
             }
 
             // 10. 同步 OS Keyring (仅当 SYNC_KEYRING 为 true)
-            if (false) { // CLI preserved intact
+            if (SYNC_KEYRING) {
                 try {
                     const keyringModulePath = path.join(OUT_DIR, 'keyringManager');
                     if (fs.existsSync(keyringModulePath + '.js') || fs.existsSync(keyringModulePath)) {
                         const { KeyringManager } = require(keyringModulePath);
                         KeyringManager.setAntigravityCredentials(ACCESS_TOKEN, REFRESH_TOKEN, EMAIL, EXPIRY);
-                        log('OS Keyring (Windows Credential Manager / Keychain / secret-tool) 更新成功: ' + EMAIL);
+                        log('OS Keyring (gemini:antigravity) 更新成功: ' + EMAIL);
                     } else {
                         log('KeyringManager 模块未找到: ' + keyringModulePath);
                     }

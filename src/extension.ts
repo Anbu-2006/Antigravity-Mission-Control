@@ -1089,20 +1089,16 @@ temp/
                     } catch (e) {}
                 }
 
-                // 当 target === 'both' 时同步 OS Keyring 与 CLI 配置
-                if (false) { // CLI credentials untouched
-                    try {
-                        KeyringManager.setAntigravityCredentials(
-                            token.access_token,
-                            cleanRefreshToken(token.refresh_token),
-                            account.email,
-                            token.expiry_timestamp
-                        );
-                        // CLI account preserved separately
-                        AccountManager.saveIndex(index);
-                    } catch (krErr) {
-                        console.warn('[Extension] OS Keyring pre-sync warning:', krErr);
-                    }
+                // 同步 OS Keyring (gemini:antigravity) 确保 Antigravity IDE 语言服务和 Settings UI 毫秒级识别
+                try {
+                    KeyringManager.setAntigravityCredentials(
+                        token.access_token,
+                        cleanRefreshToken(token.refresh_token),
+                        account.email,
+                        token.expiry_timestamp
+                    );
+                } catch (krErr) {
+                    console.warn('[Extension] OS Keyring pre-sync warning:', krErr);
                 }
 
                 const currentWorkspacePath = (vscode.workspace.workspaceFolders && vscode.workspace.workspaceFolders.length > 0)
@@ -1119,7 +1115,7 @@ temp/
                     dbPathOverride || undefined,
                     Object.keys(exePathConfig).length > 0 ? exePathConfig : undefined,
                     processWaitSeconds,
-                    false, // CLI separation: do not sync OS Keyring
+                    true, // Sync OS Keyring (gemini:antigravity) for Antigravity IDE language server
                     currentWorkspacePath
                 );
 

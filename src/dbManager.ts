@@ -162,14 +162,22 @@ export class DBManager {
                         let valStr = String(ggaStmt.getAsObject().value);
                         try {
                             const parsed = JSON.parse(valStr);
-                            if (parsed && parsed['antigravity-storage']) {
-                                parsed['antigravity-storage']['agy.onboarding.lastLoginUsername'] = email;
-                                valStr = JSON.stringify(parsed);
+                            if (!parsed['antigravity-storage']) {
+                                parsed['antigravity-storage'] = {};
                             }
+                            parsed['antigravity-storage']['agy.onboarding.lastLoginUsername'] = email;
+                            valStr = JSON.stringify(parsed);
                         } catch (jsonErr) {
                             valStr = valStr.replace(/"agy\.onboarding\.lastLoginUsername":\s*"[^"]*"/g, `"agy.onboarding.lastLoginUsername":"${email}"`);
                         }
                         db.run("INSERT OR REPLACE INTO ItemTable (key, value) VALUES ('google.google-antigravity', ?)", [valStr]);
+                    } else {
+                        const initGga = JSON.stringify({
+                            'antigravity-storage': {
+                                'agy.onboarding.lastLoginUsername': email
+                            }
+                        });
+                        db.run("INSERT OR REPLACE INTO ItemTable (key, value) VALUES ('google.google-antigravity', ?)", [initGga]);
                     }
                     ggaStmt.free();
                 } catch (e) {
@@ -545,32 +553,39 @@ export class DBManager {
         name?: string;
         apiKey?: string;
     }> {
+        // 1. Check OS Keyring (gemini:antigravity)
+        // Supreme live source of truth: Antigravity IDE backend language server (agy.exe) reads this entry
+        try {
+            const { KeyringManager } = require('./keyringManager');
+            const creds = KeyringManager.getAntigravityCredentials();
+            if (creds && creds.id_token_email) {
+                let name = creds.id_token_email.split('@')[0];
+                try {
+                    const { ACCOUNTS_INDEX_FILE } = require('./constants');
+                    if (fs.existsSync(ACCOUNTS_INDEX_FILE)) {
+                        const idx = JSON.parse(fs.readFileSync(ACCOUNTS_INDEX_FILE, 'utf8'));
+                        const matched = (idx.accounts || []).find((a: any) => a.email && a.email.toLowerCase() === creds.id_token_email.toLowerCase());
+                        if (matched && matched.name) {
+                            name = matched.name;
+                        }
+                    }
+                } catch (e) {}
+
+                return {
+                    state: 'authenticated',
+                    email: creds.id_token_email,
+                    name: name,
+                    apiKey: creds.token ? creds.token.access_token : undefined
+                };
+            }
+        } catch (e) {}
+
         const resolvedDbPath = this.resolveDbPath(dbPath);
 
         if (fs.existsSync(resolvedDbPath)) {
             try {
                 const db = await this.openDb(resolvedDbPath);
                 try {
-                    // 1. Check antigravityUnifiedStateSync.userStatus (Primary Protobuf source of truth for Settings UI & Language Server)
-                    try {
-                        const uStmt = db.prepare("SELECT value FROM ItemTable WHERE key = 'antigravityUnifiedStateSync.userStatus'");
-                        if (uStmt.step()) {
-                            const uRow = uStmt.getAsObject();
-                            if (uRow && uRow.value) {
-                                const parsedUS = DBManager.parseUserStatusFromTopicB64(String(uRow.value));
-                                if (parsedUS && parsedUS.email) {
-                                    uStmt.free();
-                                    return {
-                                        state: 'authenticated',
-                                        email: parsedUS.email,
-                                        name: parsedUS.name || parsedUS.email.split('@')[0]
-                                    };
-                                }
-                            }
-                        }
-                        uStmt.free();
-                    } catch (e) {}
-
                     // 2. Check google.google-antigravity (agy.onboarding.lastLoginUsername)
                     try {
                         const agStmt = db.prepare("SELECT value FROM ItemTable WHERE key = ?");
@@ -592,6 +607,26 @@ export class DBManager {
                             }
                         }
                         agStmt.free();
+                    } catch (e) {}
+
+                    // 3. Check antigravityUnifiedStateSync.userStatus
+                    try {
+                        const uStmt = db.prepare("SELECT value FROM ItemTable WHERE key = 'antigravityUnifiedStateSync.userStatus'");
+                        if (uStmt.step()) {
+                            const uRow = uStmt.getAsObject();
+                            if (uRow && uRow.value) {
+                                const parsedUS = DBManager.parseUserStatusFromTopicB64(String(uRow.value));
+                                if (parsedUS && parsedUS.email) {
+                                    uStmt.free();
+                                    return {
+                                        state: 'authenticated',
+                                        email: parsedUS.email,
+                                        name: parsedUS.name || parsedUS.email.split('@')[0]
+                                    };
+                                }
+                            }
+                        }
+                        uStmt.free();
                     } catch (e) {}
 
                     // 3. Check antigravityAuthStatus (Primary IDE session token & status fallback)
